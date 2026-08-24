@@ -85,7 +85,14 @@
             border-radius:8px;padding:10px 13px;color:#a8c3cf}
   .vio .law b{color:var(--text)}
   .vio .law a{color:var(--teal);text-decoration:none;border-bottom:1px dotted var(--teal-dk)}
-  .vio .conf{font-size:.74rem;color:var(--dim);margin-top:7px}
+  .vio .conf{font-size:.74rem;color:var(--dim);margin-top:7px;
+             display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ev{font-size:.68rem;font-weight:700;padding:1px 8px;border-radius:20px;
+      letter-spacing:.3px;white-space:nowrap;cursor:help}
+  .ev-c{background:#0d2b26;color:var(--ok);border:1px solid #1f5f52}
+  .ev-o{background:#0c2029;color:#8fd0e0;border:1px solid #2a5468}
+  .ev-i{background:#2a2109;color:var(--warn);border:1px solid #5c4715}
+  .evsrc{font-size:.7rem;color:#4d6b7a;flex:1;min-width:160px}
 
   .meta{display:flex;gap:26px;flex-wrap:wrap;font-size:.88rem;margin-bottom:14px;
         background:#0c1f2a;border:1px solid var(--line);border-radius:10px;padding:12px 16px}

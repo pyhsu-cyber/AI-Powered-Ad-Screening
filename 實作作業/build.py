@@ -30,20 +30,27 @@ reg = json.loads(io.open(os.path.join(os.path.dirname(HERE), 'regulations.json')
 laws = {l['id']: {k: l[k] for k in ('law_name', 'article', 'summary', 'penalty', 'url')}
         for l in reg['laws']}
 scope = reg.get('keyword_scope', {})
+ev = reg.get('keyword_evidence', {})
 block = ('/* @generated-from-regulations\n'
          '   本區塊由 build.py 從 ../regulations.json 自動產生，請不要手改。 */\n'
          'const KEYWORD_SCOPE = ' + json.dumps(
              {'cosmetic_only': scope.get('cosmetic_only', []),
               'food_only': scope.get('food_only', [])},
              ensure_ascii=False, indent=2) + ';\n'
+         'const KEYWORD_EVIDENCE = ' + json.dumps(
+             {'sources': ev.get('sources', []), 'map': ev.get('map', {})},
+             ensure_ascii=False, separators=(',', ':')) + ';\n'
          'const LAWS = ' + json.dumps(laws, ensure_ascii=False, indent=2) + ';\n'
          '/* @end-generated */')
 js, nb = re.subn(r'/\* @generated-from-regulations.*?/\* @end-generated \*/',
                  lambda m: block, js, flags=re.S)
 if nb != 1:
     raise SystemExit('建置失敗：app.js 裡找不到 @generated-from-regulations 區塊 (%d)' % nb)
+evm = ev.get('map', {})
+lv = {k: sum(1 for x in evm.values() if x[0] == k) for k in 'coi'}
 print('  已注入 %d 條法條、化粧品專屬 %d 詞、食品專屬 %d 詞'
       % (len(laws), len(scope.get('cosmetic_only', [])), len(scope.get('food_only', []))))
+print('  證據等級：裁處案例 %d、法規明文 %d、推論（疑似）%d' % (lv['c'], lv['o'], lv['i']))
 
 out, n2 = re.subn(r'<script src="app\.js"></script>',
                   lambda m: '<script>\n' + js.rstrip() + '\n</script>', out)

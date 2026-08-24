@@ -76,6 +76,7 @@ const gKeyGet = () => (localStorage.getItem('gemini_key') || '').trim();
    以下兩份資料由 build.py 從 ../regulations.json 自動產生並覆寫，請不要手改。
    直接開這個檔開發時，用的是下面這份預設值。 */
 const KEYWORD_SCOPE = { cosmetic_only: [], food_only: [] };
+const KEYWORD_EVIDENCE = { sources: [], map: {} };
 const LAWS = {
   'fsa-28-1': {law_name:'食品安全衛生管理法', article:'第28條第1項',
     summary:'食品、食品添加物、食品用洗潔劑及經中央主管機關公告之食品器具、容器或包裝，其標示、宣傳或廣告，不得有不實、誇張或易生誤解之情形。',
@@ -165,11 +166,30 @@ function applicable(v, productType) {
 function shouldFilter(productType) {
   return productType === '化粧品' || FOODISH.indexOf(productType) >= 0;
 }
+/* 同一段文字被長短兩個關鍵字都命中時（例如「美白」與「7天美白」），
+   只留較長、較具體的那一個，避免同一句被計成兩筆違規。
+   有了這層，長短詞就能並存——短詞負責廣泛涵蓋，長詞負責精確描述。 */
+function dedupeNested(vios) {
+  return vios.filter(v => !vios.some(o =>
+    o !== v && o.quote.length > v.quote.length && o.quote.indexOf(v.quote) >= 0));
+}
+
 function splitByScope(vios, productType) {
+  vios = dedupeNested(vios);
   if (!shouldFilter(productType)) return { keep: vios, drop: [] };
   const keep = [], drop = [];
   vios.forEach(v => (applicable(v, productType) ? keep : drop).push(v));
   return { keep: keep, drop: drop };
+}
+
+/* 關鍵字的證據等級：
+     c 有實際裁處案例 ／ o 主管機關認定基準明文例示 ／ i 僅依法規條文推論
+   推論來的只能標示「疑似」，不能講得像已經定讞。 */
+const EV_LABEL = { c: '有裁處案例', o: '法規明文例示', i: '疑似・待認定' };
+function evidenceOf(kw) {
+  const e = (KEYWORD_EVIDENCE.map || {})[kw];
+  if (!e) return { level: 'i', source: '' };
+  return { level: e[0], source: (KEYWORD_EVIDENCE.sources || [])[e[1]] || '' };
 }
 
 function currentType() {
@@ -802,6 +822,7 @@ function renderResult(d, opts) {
   }
   shown.forEach((v, i) => {
     const law = lawFor(v, pType);
+    const ev = evidenceOf(v.quote);
     const div = document.createElement('div');
     div.className = 'vio type-' + v.violation_type;
     div.innerHTML = `
@@ -810,7 +831,9 @@ function renderResult(d, opts) {
       <div class="law">📖 <b>${esc(law.law_name||'')} ${esc(law.article||'')}</b>：${esc(law.summary||'')}<br>
         ⚖ ${esc(law.penalty||'')}　<a href="${esc(law.url||'#')}" target="_blank">全國法規資料庫原文 ↗</a></div>
       <div class="conf">${isDemo ? '比對方式：關鍵字命中'
-                            : 'AI 信心程度：' + esc(v.confidence)}</div>`;
+                            : 'AI 信心程度：' + esc(v.confidence)}
+        <span class="ev ev-${ev.level}" title="${esc(ev.source)}">${EV_LABEL[ev.level]}</span>
+        ${ev.source ? '<span class="evsrc">' + esc(ev.source) + '</span>' : ''}</div>`;
     list.appendChild(div);
   });
   // 帶入陳情信欄位（已經有值就不覆蓋，避免蓋掉使用者填的內容）
@@ -877,6 +900,7 @@ function buildLetter() {
     return false;
   }
   const groups = groupBySentence(usable, analysis.ad_text || $('adText').value);
+  const suspected = [];      // 只能標「疑似」的項次
   const vioText = groups.map((grp, i) => {
     const lead = heaviest(grp.vios);
     const law = lawFor(lead, pType);
@@ -884,11 +908,30 @@ function buildLetter() {
     const kinds = [].filter.call(
       ['宣稱醫療效能', '誇大不實'],
       k => grp.vios.some(v => v.violation_type === k)).join('、');
+
+    // 逐詞列出依據。不可用整段最強的證據涵蓋整段——
+    // 那會讓只是推論的用語看起來也有裁處前例，形同過度主張。
+    const basisLines = grp.vios.map(v => {
+      const e = evidenceOf(v.quote);
+      const head = `　　　・「${v.quote}」（${v.violation_type}）`;
+      if (e.level === 'c') return head + `：同類用語業經主管機關實際裁處。案例：${e.source}`;
+      if (e.level === 'o') return head + `：經主管機關明文列為違規詞句。依據：${e.source}`;
+      suspected.push(`第${i + 1}項「${v.quote}」`);
+      return head + `：屬檢舉人依法規條文研判之疑似違規，尚無明文例示或裁處案例可稽，`
+                  + `惠請貴局本於職權認定。研判依據：${e.source}`;
+    }).join('\n');
+
     return `　（${i+1}）廣告宣稱：「${grp.line}」\n`
          + `　　　其中 ${words} 涉${kinds}。${reasonFor(lead, pType)}\n`
          + `　　　涉違反《${law.law_name}》${law.article}：「${law.summary}」\n`
-         + `　　　罰則：${law.penalty}`;
+         + `　　　罰則：${law.penalty}\n`
+         + `　　　個別用語之依據：\n` + basisLines;
   }).join('\n\n');
+  const suspectNote = suspected.length
+    ? `\n\n　　※ 上開 ${suspected.join('、')} 係檢舉人依法規條文研判之疑似違規用語，`
+      + `並非既有裁處前例，是否構成違規請貴局本於職權認定；`
+      + `其餘各項均有主管機關明文例示或實際裁處案例可稽。`
+    : '';
 
   // L8：必填檢核，不要讓「（姓名）」「（未填）」這種佔位符被印出去寄給衛生局
   const missing = [];
@@ -940,7 +983,7 @@ ${adFull ? adFull.split('\n').map(l => '　　' + l).join('\n') : '　　（詳�
 
 三、上開廣告經初步檢視，疑有下列違規情事：
 
-${vioText || '　（無）'}
+${vioText || '　（無）'}${suspectNote}
 
 四、上開廣告用語已逾越一般商業宣傳範圍，恐使消費者誤信產品具有醫療或誇大之效能，影響國民健康與消費權益，爰依相關法規檢舉，請貴局依法查處。
 
