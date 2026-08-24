@@ -1,0 +1,71 @@
+著作權所有，保留一切權利
+Copyright (c) 2026 許必瑜 (Pi-Yu Hsu). All rights reserved.
+
+────────────────────────────────────────────────────────────
+
+【中文】
+
+本專案之原始碼、文件、設計素材與所有相關檔案（以下合稱「本著作」），
+著作權均歸著作權人所有。
+
+本著作公開於 GitHub 之目的，僅為公開展示與供人閱覽，
+著作權人並未因此授予任何人下列權利：
+
+  1. 使用、執行本著作
+  2. 重製、修改、改作本著作
+  3. 散布、公開傳輸、出租或出借本著作
+  4. 將本著作之全部或一部用於商業用途
+
+如需上述任一權利，請事先取得著作權人之書面同意。
+
+本著作依「現狀」提供，不附任何明示或默示之擔保，
+包括但不限於適售性、特定目的適用性及未侵害他人權利之擔保。
+著作權人對於因使用或無法使用本著作所生之任何損害，不負任何責任。
+
+────────────────────────────────────────────────────────────
+
+【English】
+
+All source code, documentation, design assets, and related files in this
+repository (the "Work") are the copyrighted property of the copyright holder.
+
+The Work is published on GitHub for public viewing and demonstration purposes
+only. No license or right is granted to any person to:
+
+  1. use or execute the Work;
+  2. reproduce, modify, or create derivative works of the Work;
+  3. distribute, publicly transmit, rent, or lend the Work; or
+  4. use the Work, in whole or in part, for any commercial purpose.
+
+Written permission from the copyright holder must be obtained in advance for
+any of the above.
+
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE WORK OR THE USE OR OTHER DEALINGS IN
+THE WORK.
+
+────────────────────────────────────────────────────────────
+
+【第三方元件 Third-party components】
+
+本著作於執行時使用或封裝下列第三方元件，各自依其原授權條款釋出，
+不受本授權條款拘束：
+
+The Work uses or bundles the following third-party components at runtime.
+Each remains governed by its own license, not by the terms above:
+
+  • tesseract.js（Apache License 2.0）— 由 CDN 於瀏覽器端載入，未包含於本儲存庫
+  • Python 執行環境與標準函式庫（PSF License）— 由 PyInstaller 封裝於 exe 內
+  • Windows.Media.Ocr — Microsoft Windows 作業系統元件，依 Windows 授權條款
+
+【法規資料 Regulatory data】
+
+`regulations.json` 中之法條條文摘要係整理自全國法規資料庫（law.moj.gov.tw）
+公開之現行法規；違規關鍵字係整理自衛生福利部食品藥物管理署認定基準與
+各縣市衛生局公開之裁處資料。政府公開資料本身不因本整理而產生新的著作權限制。
+
+法條內容請以全國法規資料庫現行條文為準；
+本著作之判定結果僅供參考，實際違規認定與裁罰以主管機關為準。

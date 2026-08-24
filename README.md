@@ -164,6 +164,15 @@ python -m pytest tests/ backend/ -v
 
 ---
 
+## 授權
+
+**著作權所有，保留一切權利** — Copyright (c) 2026 許必瑜 (Pi-Yu Hsu)
+
+本專案公開於 GitHub 僅供閱覽與展示，**未授予任何使用、重製、修改或散布的權利**。
+如需使用請事先取得書面同意。詳見 [LICENSE](LICENSE)。
+
+第三方元件（tesseract.js、Python 執行環境、Windows.Media.Ocr）依其原授權條款釋出。
+
 ## 版本
 
 各版變更與驗證結果見 [`說明文件/版本紀錄.md`](說明文件/版本紀錄.md)。
