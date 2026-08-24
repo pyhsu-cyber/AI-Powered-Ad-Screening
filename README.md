@@ -3,6 +3,8 @@
 上傳一張廣告截圖，自動讀出圖上的字、比對 338 個違規用語、列出涉違反的法條與罰則，
 並生成可直接寄給衛生局的陳情信。涵蓋**食品、健康食品、化粧品、藥品、醫療器材**五類廣告。
 
+**線上直接試用（免安裝）** → https://pyhsu-cyber.github.io/AI-Powered-Ad-Screening/
+
 ![操作畫面](設計素材/screenshot-操作畫面.png)
 
 > **這是初篩工具，不是裁決系統。** 命中結果一律需人工複核，最終違規認定以主管機關為準。
@@ -32,7 +34,20 @@
 
 ---
 
-## 快速開始
+## 兩種使用方式
+
+| | 線上版 | 桌面版 |
+|---|---|---|
+| 網址／取得 | [pyhsu-cyber.github.io/AI-Powered-Ad-Screening](https://pyhsu-cyber.github.io/AI-Powered-Ad-Screening/) | [Releases](../../releases) 下載 zip |
+| 安裝 | 免安裝，開網頁即用 | 解壓縮後雙擊 exe |
+| 文字辨識 | 瀏覽器 OCR（約 5 秒，首次下載模型 9 MB） | Windows 內建 OCR（約 1 秒）＋瀏覽器 OCR 交叉比對 |
+| 平台 | 任何裝置，含手機 | Windows 10 / 11 |
+| 隱私 | 全程在瀏覽器內執行，圖片不上傳 | 全程在本機執行 |
+
+兩版功能相同（違規比對、法條對應、陳情信生成）。桌面版多一套 Windows OCR，
+辨識較快且會自動交叉比對補漏。
+
+## 快速開始（桌面版）
 
 1. 到 [Releases](../../releases) 下載最新版 zip 並解壓縮
 2. 雙擊 `違規廣告快篩.exe`（Windows 首次執行會攔截，點「其他資訊」→「仍要執行」）
@@ -59,7 +74,10 @@ static/index.html       操作介面（build.py 產生，勿手改）
 
 實作作業/               前端原始碼
   index.html  styles.css  app.js
-  build.py              合併內嵌並從 regulations.json 注入法規資料
+  build.py              產生 static/index.html 與 docs/index.html
+                        並從 regulations.json 注入法規資料
+
+docs/                   GitHub Pages 線上版（純瀏覽器，不需要 exe）
 
 backend/                Flask 後端重實作（規格與測試夾具，尚未接線）
 tests/                  pytest 測試
@@ -86,6 +104,10 @@ SPEC/                   需求規格書（FR / EC / NFR / AC）
 cd 實作作業
 python build.py
 ```
+
+一次會產出兩個版本：`static/index.html`（桌面版，走 `/api/analyze`）與
+`docs/index.html`（線上版，前端自己比對）。同一份原始碼靠啟動時偵測 `/api/status`
+是否存在來決定走哪條路，不需要分岔維護。
 
 ---
 

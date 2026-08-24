@@ -13,6 +13,7 @@ import io
 import json
 import os
 import re
+import shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(os.path.dirname(HERE), 'static', 'index.html')
@@ -52,4 +53,14 @@ if n1 != 1 or n2 != 1:
 
 io.open(OUT, 'w', encoding='utf-8', newline='').write(out)
 print('建置完成 -> %s  (%d 字元)' % (OUT, len(out)))
+
+# ── 同時輸出 GitHub Pages 版（純瀏覽器，不需要 exe）
+ROOT = os.path.dirname(HERE)
+DOCS = os.path.join(ROOT, 'docs')
+os.makedirs(DOCS, exist_ok=True)
+io.open(os.path.join(DOCS, 'index.html'), 'w', encoding='utf-8', newline='').write(out)
+shutil.copyfile(os.path.join(ROOT, 'regulations.json'),
+                os.path.join(DOCS, 'regulations.json'))
+io.open(os.path.join(DOCS, '.nojekyll'), 'w', encoding='utf-8').write('')
+print('Pages 版 -> %s（含 regulations.json）' % DOCS)
 print('提醒：改了 regulations.json 要重開程式；只改介面的話重整瀏覽器 Ctrl+F5 即可。')

@@ -177,16 +177,74 @@ function currentType() {
   return (sel && sel.value) || (analysis && analysis.product_type) || '';
 }
 
-/* 以 OCR 第一行猜產品名稱（廣告文案第一行通常就是品名） */
+/* 以 OCR 第一行猜產品名稱。第一行通常是品名，但也可能是促銷標語或整句廣告詞，
+   所以要排除：含句讀（品名不會有逗號句號）、或本身就是促銷用語的行。 */
+const PROMO = /限時|優惠|買一送一|買二送一|熱銷|第一名|免運|特價|下殺|團購|加購|試用/;
 function guessProductName(text) {
   const first = String(text || '').split('\n').map(x => x.trim()).filter(Boolean)[0] || '';
-  return (first.length >= 2 && first.length <= 30) ? first : '';
+  if (first.length < 2 || first.length > 30) return '';
+  if (/[，,。.！!？?；;、]/.test(first)) return '';   // 是句子不是品名
+  if (PROMO.test(first)) return '';                   // 是促銷標語不是品名
+  return first;
 }
 
-/* ============ 系統狀態 ============ */
-fetch('/api/status').then(r => r.json())
+/* ============ 執行模式偵測 ============
+   exe 模式：/api/analyze 由本機程式處理（Windows OCR + 關鍵字比對）
+   純瀏覽器模式：GitHub Pages 上沒有後端，前端自己讀 regulations.json 做比對 */
+let standalone = false;
+let REGS = null;
+
+function loadLocalRegulations() {
+  return fetch('regulations.json', { cache: 'no-cache' })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(j => { REGS = j; });
+}
+
+function enterStandalone() {
+  standalone = true;
+  serverOcr = false;                       // 沒有後端 OCR，直接走瀏覽器 OCR
+  if (document.body) document.body.classList.add('standalone');
+  return loadLocalRegulations().catch(e =>
+    notify('noticeStep1', '無法載入法規資料庫（regulations.json）：' + e.message
+         + '\n請確認檔案與網頁放在同一個目錄。', 'err'));
+}
+
+fetch('/api/status')
+  .then(r => { if (!r.ok) throw new Error('no backend'); return r.json(); })
   .then(s => { aiEnabled = !!s.ai_enabled; })
-  .catch(() => {});
+  .catch(() => enterStandalone());
+
+/* 純瀏覽器模式的比對引擎。對應 exe 示範模式的行為，但多做兩件事：
+   產品名稱取 OCR 第一行（exe 一律回「示範模式無法辨識」）、
+   風險等級依嚴重度分級（exe 一律回「中」）。 */
+function analyzeLocal(text) {
+  if (!REGS) throw new Error('法規資料庫尚未載入完成，請稍候再試。');
+  const dk = REGS.demo_keywords || {};
+  const laws = {};
+  (REGS.laws || []).forEach(l => { laws[l.id] = l; });
+  const vios = [];
+  const add = (kw, type, lawId, reason) => vios.push({
+    quote: kw, violation_type: type, reason: reason, confidence: '中',
+    law_id: lawId, law: Object.assign({}, laws[lawId] || {})
+  });
+  (dk.medical_efficacy || []).forEach(kw => {
+    if (text.indexOf(kw) >= 0)
+      add(kw, '宣稱醫療效能', 'fsa-28-2', '「' + kw + '」屬醫療效能用語，非藥物不得宣稱。');
+  });
+  (dk.exaggeration || []).forEach(kw => {
+    if (text.indexOf(kw) >= 0)
+      add(kw, '誇大不實', 'fsa-28-1', '「' + kw + '」屬誇大或易生誤解之用語。');
+  });
+  return {
+    mode: 'standalone',
+    product_name: guessProductName(text) || '（未標示）',
+    product_type: '無法判定',
+    ad_text: text,
+    violations: vios,
+    risk_level: calcRisk(vios),
+    overall_assessment: summarize(vios)
+  };
+}
 
 /* ============ 圖片載入（點選 / 拖曳 / 貼上） ============ */
 const drop = $('drop'), fileInput = $('file');
@@ -258,7 +316,9 @@ function loadFile(f) {
     } else if (serverOcr === false) {
       runOCR(true);                           // 已知 Windows OCR 不能用 → 直接跑瀏覽器 OCR
     } else {
-      ocrMsg('圖片已載入 — 按「開始快篩分析」，會用 Windows 內建 OCR 讀取圖上的文字。');
+      ocrMsg(standalone
+        ? '圖片已載入 — 按「開始快篩分析」，會在你的瀏覽器裡辨識圖上的文字（首次需下載辨識模型約 9 MB）。'
+        : '圖片已載入 — 按「開始快篩分析」，會用 Windows 內建 OCR 讀取圖上的文字。');
     }
   };
   reader.readAsDataURL(f);
@@ -545,6 +605,7 @@ $('analyzeBtn').onclick = async () => {
    Windows OCR 有時會把關鍵字吃掉（例如「改善心血管疾病」讀成「改」），
    兩套引擎互補可以把漏掉的違規補回來。 */
 async function crossCheckWithBrowserOCR() {
+  if (standalone) return;                      // 純瀏覽器模式本來就只有這一套引擎
   if (aiEnabled || gKeyGet()) return;          // AI 模式直接看圖，不需要
   if (!imageB64 || serverOcr !== true) return; // 只有走過 Windows OCR 才需要補
   const ta = $('adText');
@@ -577,6 +638,10 @@ async function crossCheckWithBrowserOCR() {
 }
 
 function postAnalyze(img, mime, text) {
+  if (standalone) {                        // 純瀏覽器模式：不打後端，本地比對
+    try { return Promise.resolve(analyzeLocal(text || '')); }
+    catch (e) { return Promise.reject(e); }
+  }
   return fetch('/api/analyze', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ image_base64: img || null, media_type: img ? mime : null, text: text || '' })
@@ -663,7 +728,6 @@ function renderResult(d, opts) {
   const lvl = isDemo ? calcRisk(scoped) : d.risk_level;
   risk.textContent = lvl; risk.className = 'risk ' + lvl;
   $('rSummary').textContent = isDemo ? summarize(scoped) : d.overall_assessment;
-  const isDemoRender = isDemo;
   const list = $('vioList');
   list.innerHTML = '';
   if (!splitByScope(d.violations || [], currentType()).keep.length)
