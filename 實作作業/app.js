@@ -356,18 +356,44 @@ function loadImg(dataUrl) {
   });
 }
 
-function rescale(img, scale) {
-  if (Math.abs(scale - 1) < 0.01) return img.src;
+
+const charCount = s => String(s || '').replace(/\s/g, '').length;
+
+/* 對比拉伸：取 2%~98% 分位做線性伸展。
+   單獨用會讓乾淨的圖變差，所以只在「再補一次」時當第二種讀法，靠聯集提升涵蓋。 */
+function stretchContrast(canvas) {
+  const ctx = canvas.getContext('2d');
+  const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const a = d.data, n = a.length / 4;
+  const gray = new Uint8Array(n), hist = new Uint32Array(256);
+  for (let i = 0, j = 0; i < a.length; i += 4, j++) {
+    const g = (a[i] * 0.299 + a[i + 1] * 0.587 + a[i + 2] * 0.114) | 0;
+    gray[j] = g; hist[g]++;
+  }
+  let lo = 0, hi = 255, acc = 0;
+  for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc > n * 0.02) { lo = v; break; } }
+  acc = 0;
+  for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc > n * 0.02) { hi = v; break; } }
+  const span = Math.max(1, hi - lo);
+  for (let i = 0, j = 0; i < a.length; i += 4, j++) {
+    const g = Math.max(0, Math.min(255, ((gray[j] - lo) * 255 / span) | 0));
+    a[i] = a[i + 1] = a[i + 2] = g;
+  }
+  ctx.putImageData(d, 0, 0);
+  return canvas;
+}
+
+/* 縮放並選擇性套用前處理，回傳 dataURL */
+function prepare(img, scale, enhance) {
   const c = document.createElement('canvas');
   c.width = Math.round(img.naturalWidth * scale);
   c.height = Math.round(img.naturalHeight * scale);
   const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, c.width, c.height);
+  if (enhance) stretchContrast(c);
   return c.toDataURL('image/png');
 }
-
-const charCount = s => String(s || '').replace(/\s/g, '').length;
 
 /* 從辨識結果的行框量出中位數字高，用來判斷圖上的字是不是太小。
    取中位數而非平均，避免單行雜訊（例如把整塊背景誤判成一行）拉歪。 */
@@ -414,22 +440,23 @@ function getTessWorker() {
    舊寫法直接 return，導致：上傳時自動啟動的 OCR 還在跑，使用者就按了分析，
    analyzeFree 的 await 立刻返回、文字框還是空的 → 誤報「沒有辨識出文字」。 */
 let ocrPromise = null;
-function runOCR(auto) {
+function runOCR(auto, enhance) {
   if (!rawDataUrl) return Promise.resolve();
   if (ocrBusy && ocrPromise) return ocrPromise;
   ocrBusy = true;
-  ocrPromise = doOCR(auto).finally(() => { ocrBusy = false; ocrPromise = null; });
+  ocrPromise = doOCR(auto, enhance).finally(() => { ocrBusy = false; ocrPromise = null; });
   return ocrPromise;
 }
 
-async function doOCR(auto) {
+async function doOCR(auto, enhance) {
   const myToken = runToken;
   const ta = $('adText');
   try {
     ocrMsg('讀取圖片…', true);
     const img = await loadImg(rawDataUrl);
     const longSide = Math.max(img.naturalWidth, img.naturalHeight);
-    const first = longSide > MAX_SIDE ? rescale(img, MAX_SIDE / longSide) : rawDataUrl;
+    const shrink = longSide > MAX_SIDE ? MAX_SIDE / longSide : 1;
+    const first = (enhance || shrink !== 1) ? prepare(img, shrink, enhance) : rawDataUrl;
 
     ocrMsg('載入中文辨識模型…（第一次約需下載 6 MB，之後瀏覽器會自動快取）', true);
     tessProgress = m => {
@@ -446,7 +473,7 @@ async function doOCR(auto) {
     const scale = lh > 0 ? Math.min(3, Math.max(1, Math.round(34 / lh))) : 1;
     if (scale > 1) {
       ocrMsg('圖上的字偏小（約 ' + lh + 'px），放大 ' + scale + ' 倍重新辨識…', true);
-      const t2 = tidyCJK((await worker.recognize(rescale(img, scale))).data.text);
+      const t2 = tidyCJK((await worker.recognize(prepare(img, scale, enhance))).data.text);
       // 放大版通常較準；只有在明顯讀更少時才退回原尺寸的結果
       if (charCount(t2) >= charCount(text) * 0.5) text = t2;
     }
@@ -495,7 +522,7 @@ $('ocrBtn').onclick = async () => {
   setBusy(btn, '辨識中…');
   setBusy($('analyzeBtn'), '請稍候…');
   try {
-    await runOCR(false);
+    await runOCR(false, true);   // 第二讀改用對比拉伸，補出來的才有意義
   } finally {
     setBusy(btn, null);
     setBusy($('analyzeBtn'), null);
