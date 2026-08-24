@@ -399,9 +399,19 @@ function getTessWorker() {
   return tessWorkerP;
 }
 
-async function runOCR(auto) {
-  if (!rawDataUrl || ocrBusy) return;
+/* 已經有一輪 OCR 在跑時，回傳「同一個」進行中的 promise 讓呼叫端等它完成。
+   舊寫法直接 return，導致：上傳時自動啟動的 OCR 還在跑，使用者就按了分析，
+   analyzeFree 的 await 立刻返回、文字框還是空的 → 誤報「沒有辨識出文字」。 */
+let ocrPromise = null;
+function runOCR(auto) {
+  if (!rawDataUrl) return Promise.resolve();
+  if (ocrBusy && ocrPromise) return ocrPromise;
   ocrBusy = true;
+  ocrPromise = doOCR(auto).finally(() => { ocrBusy = false; ocrPromise = null; });
+  return ocrPromise;
+}
+
+async function doOCR(auto) {
   const myToken = runToken;
   const ta = $('adText');
   try {
@@ -453,8 +463,6 @@ async function runOCR(auto) {
   } catch (e) {
     tessProgress = null;
     ocrMsg('⚠ 圖片辨識失敗：' + e.message + ' — 請把廣告文案手動貼到下方欄位。');
-  } finally {
-    ocrBusy = false;
   }
 }
 $('ocrBtn').onclick = async () => {
