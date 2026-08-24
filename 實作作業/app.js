@@ -369,6 +369,17 @@ function rescale(img, scale) {
 
 const charCount = s => String(s || '').replace(/\s/g, '').length;
 
+/* 從辨識結果的行框量出中位數字高，用來判斷圖上的字是不是太小。
+   取中位數而非平均，避免單行雜訊（例如把整塊背景誤判成一行）拉歪。 */
+function medianLineHeight(data) {
+  const hs = ((data && data.lines) || [])
+    .filter(l => l.bbox && l.text && l.text.trim())
+    .map(l => l.bbox.y1 - l.bbox.y0)
+    .filter(h => h > 0)
+    .sort((a, b) => a - b);
+  return hs.length ? hs[Math.floor(hs.length / 2)] : 0;
+}
+
 /* OCR 會在中文字之間插入空白，會讓關鍵字比對失效，這裡還原。
    另外把全形英數轉半形 —— 後端是純子字串比對，「７天美白」比對不到「7天美白」。 */
 const CJK = '\\u3000-\\u303f\\u4e00-\\u9fff\\uf900-\\ufaff\\uff00-\\uffef';
@@ -391,7 +402,7 @@ function getTessWorker() {
   if (!tessWorkerP) {
     tessWorkerP = (async () => {
       if (!window.Tesseract) await loadScript(TESS_CDN);
-      return await Tesseract.createWorker('chi_tra+eng', 1, {
+      return await Tesseract.createWorker('chi_tra', 1, {
         logger: m => { if (tessProgress) tessProgress(m); }
       });
     })().catch(e => { tessWorkerP = null; throw e; });
@@ -418,22 +429,26 @@ async function doOCR(auto) {
     ocrMsg('讀取圖片…', true);
     const img = await loadImg(rawDataUrl);
     const longSide = Math.max(img.naturalWidth, img.naturalHeight);
-    const shortSide = Math.min(img.naturalWidth, img.naturalHeight);
     const first = longSide > MAX_SIDE ? rescale(img, MAX_SIDE / longSide) : rawDataUrl;
 
-    ocrMsg('載入中文辨識模型…（第一次約需下載 9 MB，之後瀏覽器會自動快取）', true);
+    ocrMsg('載入中文辨識模型…（第一次約需下載 6 MB，之後瀏覽器會自動快取）', true);
     tessProgress = m => {
       if (m.status === 'recognizing text') ocrMsg('辨識文字中… ' + Math.round((m.progress || 0) * 100) + '%', true);
       else if (m.status) ocrMsg(m.status + '…', true);
     };
     const worker = await getTessWorker();
-    let text = tidyCJK((await worker.recognize(first)).data.text);
+    const pass1 = await worker.recognize(first);
+    let text = tidyCJK(pass1.data.text);
 
-    // 幾乎沒讀到字，而且原圖偏小 → 放大兩倍再試一次，取較長的結果
-    if (charCount(text) < 10 && shortSide < 1000) {
-      ocrMsg('文字太少，放大後再試一次…', true);
-      const retry = tidyCJK((await worker.recognize(rescale(img, 2))).data.text);
-      if (charCount(retry) > charCount(text)) text = retry;
+    // 依實際量到的字高決定要不要放大。真實廣告截圖的字往往只有 10~15px，
+    // tesseract 對 CJK 的舒適區約 34px，差距大就整數倍放大重讀一次。
+    const lh = medianLineHeight(pass1.data);
+    const scale = lh > 0 ? Math.min(3, Math.max(1, Math.round(34 / lh))) : 1;
+    if (scale > 1) {
+      ocrMsg('圖上的字偏小（約 ' + lh + 'px），放大 ' + scale + ' 倍重新辨識…', true);
+      const t2 = tidyCJK((await worker.recognize(rescale(img, scale))).data.text);
+      // 放大版通常較準；只有在明顯讀更少時才退回原尺寸的結果
+      if (charCount(t2) >= charCount(text) * 0.5) text = t2;
     }
     tessProgress = null;
     if (!text) {
@@ -460,6 +475,15 @@ async function doOCR(auto) {
     textIsMachine = true;
     ocrMsg('✅ 瀏覽器 OCR 辨識出 ' + charCount(text) + ' 個字' + note
          + ' — 請確認下方文字是否正確，可自行修正後再按「開始快篩分析」。');
+    // 字實在太小時，放大也救不回來，直接告訴使用者怎麼拿到更好的來源圖
+    if (lh > 0 && lh < 13) {
+      notify('noticeStep1', '這張圖上的字只有約 ' + lh + 'px 高，已自動放大 ' + scale
+           + ' 倍辨識，但仍可能有不少錯字。\n'
+           + '想要更準的話：改用廣告的原圖（不要截圖再截圖）、'
+           + '截圖前先把網頁放大、或只截取有文字的區域。\n'
+           + '也可以用 Win + Shift + S 截圖後，在「剪取工具」按「文字動作」直接複製文字貼上。',
+             'warn', 15000);
+    }
   } catch (e) {
     tessProgress = null;
     ocrMsg('⚠ 圖片辨識失敗：' + e.message + ' — 請把廣告文案手動貼到下方欄位。');
