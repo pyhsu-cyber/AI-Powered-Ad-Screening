@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>違規廣告快篩使用說明書</title>
+<style>
+  :root{
+    --bg:#0a1620; --panel:#102532; --panel2:#0c1d28; --line:#1d3a4a; --line-soft:#16303e;
+    --text:#e4f0f5; --muted:#7d99a8; --dim:#5b7787;
+    --teal:#5fe3cf; --teal-dk:#2bbfa8; --teal-glow:#5fe3cf1f;
+    --warn:#f5b13d; --danger:#ff6b63; --ok:#4ade80;
+    --sans:"Microsoft JhengHei","PingFang TC","Noto Sans TC","Hiragino Sans TC","Segoe UI",sans-serif;
+    --mono:"Cascadia Mono",Consolas,"Courier New",monospace;
+    --maxw:68ch;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.85; font-size:15.5px; -webkit-font-smoothing:antialiased;
+  }
+
+  /* ─── 版面：左目錄 + 右內文 ─── */
+  .wrap{display:grid; grid-template-columns:250px minmax(0,1fr); gap:56px;
+        max-width:1160px; margin:0 auto; padding:0 32px}
+  nav{position:sticky; top:0; align-self:start; height:100vh; overflow-y:auto;
+      padding:44px 0 40px; border-right:1px solid var(--line-soft)}
+  nav .brand{font-size:.9rem; font-weight:700; letter-spacing:.6px; margin-bottom:4px}
+  nav .ver{font-family:var(--mono); font-size:.7rem; color:var(--teal);
+           border:1px solid var(--teal-dk); border-radius:4px; padding:1px 7px; display:inline-block}
+  nav ol{list-style:none; margin-top:26px; display:flex; flex-direction:column; gap:1px}
+  nav a{display:block; padding:6px 14px 6px 0; color:var(--muted); text-decoration:none;
+        font-size:.83rem; border-left:2px solid transparent; padding-left:13px; transition:.15s}
+  nav a:hover{color:var(--text); border-left-color:var(--line)}
+  nav a.on{color:var(--teal); border-left-color:var(--teal); background:var(--teal-glow)}
+  nav a:focus-visible{outline:2px solid var(--teal); outline-offset:-2px; border-radius:3px}
+  nav .grp{font-size:.68rem; color:var(--dim); letter-spacing:1.4px; margin:22px 0 7px 13px}
+
+  main{padding:44px 0 120px; max-width:var(--maxw)}
+
+  /* ─── 標題層級：靠字重／字級／字距／顏色建立，不靠換字體 ─── */
+  h1{font-size:2.1rem; font-weight:800; letter-spacing:-.4px; line-height:1.3;
+     text-wrap:balance; margin-bottom:14px}
+  .lede{font-size:1.02rem; color:var(--muted); text-wrap:balance; margin-bottom:34px}
+  h2{font-size:1.28rem; font-weight:750; letter-spacing:-.2px; text-wrap:balance;
+     margin:0 0 18px; padding-bottom:11px; border-bottom:1px solid var(--line)}
+  h3{font-size:.99rem; font-weight:700; color:var(--teal); margin:26px 0 9px; letter-spacing:.2px}
+  section{margin-bottom:60px; scroll-margin-top:32px}
+  p{margin-bottom:13px}
+  p + ul, p + ol{margin-top:-4px}
+  ul,ol{margin:0 0 14px 1.15rem; display:flex; flex-direction:column; gap:7px}
+  li{padding-left:3px}
+  strong{color:#fff; font-weight:700}
+  a{color:var(--teal)}
+
+  code{font-family:var(--mono); font-size:.86em; background:var(--panel2);
+       border:1px solid var(--line); border-radius:4px; padding:1px 6px; color:#a8e8dc}
+  kbd{font-family:var(--mono); font-size:.78em; background:#16303e; color:#cfe9f2;
+      border:1px solid #2a4f61; border-bottom-width:2px; border-radius:5px;
+      padding:2px 7px; white-space:nowrap}
+
+  /* ─── 流程步驟：真的是序列才編號 ─── */
+  .steps{display:flex; flex-direction:column; gap:0; counter-reset:s}
+  .step{display:grid; grid-template-columns:44px 1fr; gap:18px; padding:22px 0;
+        border-bottom:1px dashed var(--line-soft)}
+  .step:last-child{border-bottom:0}
+  .step-n{counter-increment:s; font-family:var(--mono); font-size:.74rem; font-weight:700;
+          color:var(--teal); border:1px solid var(--teal-dk); border-radius:8px;
+          height:32px; display:grid; place-items:center; background:var(--teal-glow)}
+  .step-n::before{content:"0" counter(s)}
+  .step h3{margin:2px 0 7px; color:var(--text); font-size:1.03rem}
+  .step p:last-child, .step ul:last-child{margin-bottom:0}
+
+  /* ─── 表格 ─── */
+  .tw{overflow-x:auto; margin:0 0 16px; border:1px solid var(--line); border-radius:10px}
+  table{border-collapse:collapse; width:100%; font-size:.88rem}
+  th,td{text-align:left; padding:10px 14px; border-bottom:1px solid var(--line-soft);
+        vertical-align:top}
+  thead th{background:var(--panel2); color:var(--muted); font-weight:650;
+           font-size:.76rem; letter-spacing:.7px; white-space:nowrap}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#0e2029}
+  td.num{font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap}
+  td.k{font-family:var(--mono); font-size:.8rem; color:#a8e8dc; white-space:nowrap}
+
+  /* ─── 提示框：語意色用左側色條編碼嚴重度 ─── */
+  .note{border:1px solid var(--line); border-left:3px solid var(--teal);
+        background:var(--panel); border-radius:0 9px 9px 0; padding:14px 17px; margin:0 0 16px;
+        font-size:.9rem}
+  .note.warn{border-left-color:var(--warn); background:#1c1810}
+  .note.stop{border-left-color:var(--danger); background:#1a1416}
+  .note .lbl{display:block; font-size:.71rem; letter-spacing:1.3px; font-weight:700;
+             color:var(--teal); margin-bottom:5px}
+  .note.warn .lbl{color:var(--warn)}
+  .note.stop .lbl{color:var(--danger)}
+  .note p:last-child{margin-bottom:0}
+
+  .pill{display:inline-block; font-size:.72rem; font-weight:700; padding:2px 9px;
+        border-radius:20px; letter-spacing:.4px; vertical-align:1px}
+  .pill.ok{background:#0d2b26; color:var(--ok); border:1px solid #1f5f52}
+  .pill.no{background:#1a1416; color:var(--danger); border:1px solid #5a2b2b}
+
+  .tree{font-family:var(--mono); font-size:.81rem; line-height:2; background:var(--panel2);
+        border:1px solid var(--line); border-radius:10px; padding:16px 18px;
+        overflow-x:auto; color:#b6d3de; margin-bottom:16px;
+        white-space:pre; tab-size:2}
+  .tree b{color:var(--teal); font-weight:600}
+  .tree i{color:var(--dim); font-style:normal}
+
+  footer{border-top:1px solid var(--line); padding-top:20px; color:var(--dim); font-size:.79rem}
+
+  @media (max-width:880px){
+    .wrap{grid-template-columns:1fr; gap:0; padding:0 20px}
+    nav{position:static; height:auto; border-right:0; border-bottom:1px solid var(--line);
+        padding:26px 0 18px}
+    nav ol{flex-flow:row wrap; gap:2px 6px; margin-top:14px}
+    nav a{border-left:0; padding:4px 10px; border:1px solid var(--line); border-radius:20px}
+    nav a.on{border-color:var(--teal-dk)}
+    nav .grp{display:none}
+    main{padding:30px 0 70px}
+    h1{font-size:1.6rem}
+  }
+
+  /* ─── 列印：轉白底黑字 ─── */
+  @media print{
+    body{background:#fff; color:#111; font-size:11pt}
+    nav, .step-n{display:none}
+    .wrap{display:block; max-width:none; padding:0}
+    main{max-width:none; padding:0}
+    h2{border-bottom:1px solid #999; page-break-after:avoid}
+    h3{color:#111}
+    section{page-break-inside:avoid; margin-bottom:26px}
+    .note{background:#f6f6f6; border-color:#bbb; border-left-color:#666}
+    .note .lbl{color:#333}
+    .tw, table, .tree{border-color:#bbb}
+    thead th{background:#eee; color:#333}
+    .tree{background:#f6f6f6; color:#222}
+    code,kbd{background:#f0f0f0; color:#111; border-color:#ccc}
+    strong{color:#000}
+    a{color:#111; text-decoration:underline}
+    .step{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<nav aria-label="目錄">
+  <div class="brand">違規廣告快篩</div>
+  <span class="ver">v6 使用說明書</span>
+  <div class="grp">開始使用</div>
+  <ol>
+    <li><a href="#about">這套工具在做什麼</a></li>
+    <li><a href="#start">三步驟開始</a></li>
+    <li><a href="#flow">操作流程</a></li>
+  </ol>
+  <div class="grp">功能說明</div>
+  <ol>
+    <li><a href="#ocr">兩套辨識引擎</a></li>
+    <li><a href="#law">產品類別與法條</a></li>
+    <li><a href="#letter">陳情信</a></li>
+  </ol>
+  <div class="grp">維護與疑難</div>
+  <ol>
+    <li><a href="#keywords">維護違規關鍵字</a></li>
+    <li><a href="#trouble">常見問題</a></li>
+    <li><a href="#privacy">資料與隱私</a></li>
+    <li><a href="#files">檔案結構</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<h1>違規廣告快篩使用說明書</h1>
+<p class="lede">上傳一張廣告截圖，自動讀出圖上的字、比對 338 個違規用語、
+列出涉違反的法條與罰則，並生成可直接寄給衛生局的陳情信。</p>
+
+<section id="about">
+  <h2>這套工具在做什麼</h2>
+  <p>它把「看到一則可疑廣告」到「送出一封格式正確、法條引用正確的檢舉信」這段流程，
+  從人工翻法規壓縮到幾分鐘。涵蓋食品、健康食品、化粧品、藥品、醫療器材五類廣告。</p>
+
+  <div class="note stop">
+    <span class="lbl">請先理解這件事</span>
+    <p>這是<strong>初篩工具，不是裁決系統</strong>。它只告訴你「這句話可能有問題、可能違反哪一條」，
+    <strong>最終違規認定以主管機關為準</strong>。所有自動判定的結果——辨識出來的文字、產品名稱、
+    產品類別——都可以也<strong>應該</strong>由你檢查修改後再送出。</p>
+  </div>
+
+  <p>設計上刻意<strong>寧可多列一項讓你排除，也不要漏掉違規句</strong>，
+  所以看到不太確定的項目是正常的，請自行判斷後刪減。</p>
+</section>
+
+<section id="start">
+  <h2>三步驟開始</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-n"></div>
+      <div>
+        <h3>雙擊 <code>違規廣告快篩.exe</code></h3>
+        <p>會跳出一個黑色視窗——那是程式本體，<strong>請不要關掉</strong>。
+        瀏覽器會自動開啟操作頁面。</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n"></div>
+      <div>
+        <h3>看到藍色警告視窗時點「仍要執行」</h3>
+        <p>因為這支程式沒有購買數位簽章，Windows 第一次執行會攔一下。
+        點「其他資訊」→「仍要執行」即可。</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-n"></div>
+      <div>
+        <h3>瀏覽器沒自動開就手動開</h3>
+        <p>網址是 <code>http://localhost:8765</code>。要結束程式，關掉那個黑色視窗就好。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="flow">
+  <h2>操作流程</h2>
+  <p>畫面上方的 STEP 1–4 指示器會跟著你的進度亮起。</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-n"></div>
+      <div>
+        <h3>上傳廣告素材</h3>
+        <p>三種方式都可以：點擊上傳區選檔、把圖直接拖進來、或按 <kbd>Ctrl</kbd> + <kbd>V</kbd>
+        貼上剛截的圖（不用先存檔）。</p>
+        <p>支援 JPG / PNG / WebP / GIF / BMP，單張上限 10 MB。
+        沒有圖也沒關係——可以直接把廣告文案貼到「廣告文字」欄位。</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n"></div>
+      <div>
+        <h3>按「開始快篩分析」</h3>
+        <p>程式會用 Windows 內建 OCR 讀出圖上的字（約 1 秒），填進「廣告文字」欄位，
+        再比對法規關鍵字，列出違規點與引用法條。</p>
+        <p>接著它會<strong>在背景用第二套 OCR 再讀一次</strong>做交叉比對。
+        如果補抓到新的違規，結果會自動更新並提示你。</p>
+        <div class="note warn">
+          <span class="lbl">這一步請務必做</span>
+          <p>OCR 難免有錯字。<strong>請看一下「廣告文字」欄位的內容對不對</strong>，
+          有錯可以直接在欄位裡改，改完再按一次「開始快篩分析」，
+          系統會用你改過的文字重新比對，不會蓋掉你的修正。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n"></div>
+      <div>
+        <h3>填檢舉資料</h3>
+        <p>產品名稱會自動帶入辨識文字的第一行、發現日期預設今天，兩者都可以改。</p>
+        <p>然後填受文機關（22 縣市衛生局）、刊登平台、廣告網址、你的姓名與聯絡方式。</p>
+        <div class="note stop">
+          <span class="lbl">產品類別一定要選對</span>
+          <p>這個欄位<strong>決定陳情信引用哪一部法規</strong>。免費模式的系統認不出產品類別，
+          預設是「無法判定」（會沿用食安法）。檢舉化粧品廣告卻沒改成「化粧品」，
+          信裡就會引到錯的法條與錯的罰鍰金額，送件可能被退補正。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n"></div>
+      <div>
+        <h3>生成陳情信 → 列印或存成 PDF</h3>
+        <p>按「生成陳情信」預覽全文，確認無誤後「列印 / 存成 PDF」，或「複製全文」貼到
+        衛生局的線上陳情表單。記得一併附上廣告截圖當證據。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="ocr">
+  <h2>兩套辨識引擎</h2>
+  <p>兩套引擎讀錯的地方不一樣，所以合併使用抓得比較全。你不需要選，系統會自動安排。</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>引擎</th><th>角色</th><th class="num">速度</th><th>需要什麼</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Windows 內建 OCR</strong></td>
+          <td>主要，預設使用</td>
+          <td class="num">約 1 秒</td>
+          <td>完全離線，不需下載</td>
+        </tr>
+        <tr>
+          <td><strong>瀏覽器 OCR</strong></td>
+          <td>備援＋背景交叉比對</td>
+          <td class="num">約 5 秒</td>
+          <td>第一次需連網下載模型約 9 MB，之後會快取</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>它們什麼時候各自出場</h3>
+  <ul>
+    <li>正常情況：Windows OCR 先出結果 → 瀏覽器 OCR 在背景補漏</li>
+    <li>Windows OCR 不能用時（缺中文 OCR 語言套件、<code>ocr.ps1</code> 被防毒擋下、
+        或跑的是舊版程式）：<strong>自動改用瀏覽器 OCR</strong>，不會整個卡住</li>
+    <li>覺得還有漏字：按文字框上方的<strong>「用瀏覽器 OCR 再補一次」</strong>，
+        結果會<strong>附加</strong>在原本文字後面，不是取代</li>
+  </ul>
+
+  <div class="note">
+    <span class="lbl">兩套都讀不好時</span>
+    <p>用 <kbd>Win</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> 截圖，在跳出的「剪取工具」視窗點
+    <strong>「文字動作」</strong>，可以直接複製圖片上的文字，再貼到「廣告文字」欄位。</p>
+  </div>
+</section>
+
+<section id="law">
+  <h2>產品類別與法條</h2>
+  <p>同一句「宣稱療效」，不同產品類別引用的法律和罰鍰級距完全不同。
+  你在 STEP 3 選的產品類別會決定這件事，違規清單和陳情信會即時跟著換。</p>
+
+  <div class="tw">
+    <table>
+      <thead>
+        <tr><th>產品類別</th><th>宣稱醫療效能</th><th>誇大不實</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>食品</td>
+            <td>食安法 §28 II<br><span style="color:var(--muted);font-size:.85em">60萬～500萬</span></td>
+            <td>食安法 §28 I<br><span style="color:var(--muted);font-size:.85em">4萬～400萬</span></td></tr>
+        <tr><td>健康食品</td>
+            <td>健康食品管理法 §14 II</td>
+            <td>健康食品管理法 §14 I</td></tr>
+        <tr><td>化粧品</td>
+            <td>化粧品衛生安全管理法 §10 II<br><span style="color:var(--muted);font-size:.85em">60萬～500萬</span></td>
+            <td>化粧品衛生安全管理法 §10 I<br><span style="color:var(--muted);font-size:.85em">4萬～20萬</span></td></tr>
+        <tr><td>藥品</td>
+            <td colspan="2">藥事法 §66　廣告須事前核准
+              <span style="color:var(--muted);font-size:.85em">（20萬～500萬）</span></td></tr>
+        <tr><td>醫療器材</td>
+            <td colspan="2">醫療器材管理法 §41 I　廣告須事前核准
+              <span style="color:var(--muted);font-size:.85em">（20萬～500萬）</span></td></tr>
+        <tr><td>其他／無法判定</td>
+            <td colspan="2" style="color:var(--muted)">沿用食安法 §28</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>藥品與醫療器材<strong>本來就可以宣稱療效</strong>，它們的違規點在於
+  「廣告未經核准或超出核准範圍」，所以對應的是廣告核准條文，不是療效禁止條文。</p>
+</section>
+
+<section id="letter">
+  <h2>陳情信</h2>
+  <p>依公文陳情信慣例產出，包含受文者、主旨、說明一～五、檢舉人、聯絡方式、陳情日期（民國年）。</p>
+  <ul>
+    <li>說明二逐條列出違規事實，每條含引用原句、違規分類、理由、涉違反法條與罰則</li>
+    <li>說明四自動計算檢附截圖份數</li>
+    <li>說明五的檢舉獎勵辦法名稱會跟著產品類別調整，化粧品不會誤引食安法的獎勵辦法</li>
+  </ul>
+  <p><strong>列印會自動轉成白底黑字</strong>，畫面是深色的沒關係，印出來是正常文件。</p>
+  <p>寄送方式：各縣市衛生局的線上陳情系統、衛福部食藥署陳情檢舉信箱，或書面郵寄。</p>
+</section>
+
+<section id="keywords">
+  <h2>維護違規關鍵字</h2>
+  <p>用記事本打開 <code>regulations.json</code>，在 <code>demo_keywords</code> 底下有兩類：</p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>分類</th><th>意義</th><th class="num">目前數量</th></tr></thead>
+      <tbody>
+        <tr><td class="k">medical_efficacy</td><td>宣稱醫療效能</td><td class="num">168</td></tr>
+        <tr><td class="k">exaggeration</td><td>誇大不實</td><td class="num">170</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note stop">
+    <span class="lbl">改完必須重開程式</span>
+    <p><code>regulations.json</code> 是程式<strong>啟動時載入一次</strong>的。
+    改完只重整網頁<strong>不會生效</strong>，要把黑色視窗關掉再重新執行 exe。</p>
+  </div>
+
+  <h3>新增關鍵字的五條規則</h3>
+  <p>比對是<strong>純字串比對</strong>，沒有語意判斷，所以有幾個容易踩的坑：</p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>規則</th><th>原因與例子</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="pill no">不要</span> 收錄包含既有關鍵字的詞</td>
+          <td>清單已有「治療」，再加「治療糖尿病」，同一句話會被<strong>算成兩筆</strong>違規</td>
+        </tr>
+        <tr>
+          <td><span class="pill no">不要</span> 把同一個詞放進兩類</td>
+          <td>同樣會被算成兩筆</td>
+        </tr>
+        <tr>
+          <td><span class="pill no">不要</span> 收錄法規允許的宣稱</td>
+          <td>「養顏美容」「調整體質」「淡化細紋」「緊緻毛孔」「美白」都是法規<strong>明文允許</strong>的，
+              收了會把合法廣告判成違規</td>
+        </tr>
+        <tr>
+          <td><span class="pill no">不要</span> 收錄太通用的詞</td>
+          <td>「改善」「有效」「健康」會到處誤判</td>
+        </tr>
+        <tr>
+          <td><span class="pill ok">要</span> 用裁處書原文測試</td>
+          <td>最容易犯的錯。裁處書寫「骨頭<strong>的一個</strong>磨損」，你收「骨頭磨損」就<strong>永遠比對不到</strong>。
+              請改收較短、穩定的詞（「磨損」）</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>每個關鍵字的法規依據、來源與真實裁罰案例，都記在
+  <code>說明文件/關鍵字來源.md</code>。</p>
+</section>
+
+<section id="trouble">
+  <h2>常見問題</h2>
+
+  <h3>上傳圖片後沒反應？</h3>
+  <p>上傳只是載入圖片，要按<strong>「開始快篩分析」</strong>才會辨識。
+  按了之後若一直轉圈，看一下狀態列的文字，通常會說明卡在哪一步。</p>
+
+  <h3>辨識出來的字很多錯，或根本讀不到？</h3>
+  <p>依序試：① 按「用瀏覽器 OCR 再補一次」；② 用原圖而不是縮圖（解析度低於 600px 會提醒你）；
+  ③ 用「剪取工具 → 文字動作」複製文字後手動貼上。</p>
+
+  <h3>改了 regulations.json 卻沒變化？</h3>
+  <p>要關掉程式重開。重整網頁沒有用。</p>
+
+  <h3>陳情信引用的法條看起來不對？</h3>
+  <p>檢查 STEP 3 的「產品類別」有沒有選對。預設是「無法判定」，會沿用食安法。</p>
+
+  <h3>按「複製全文」沒有反應？</h3>
+  <p>瀏覽器在視窗失焦時會拒絕存取剪貼簿。畫面會提示你改用手動選取後按
+  <kbd>Ctrl</kbd> + <kbd>C</kbd>。</p>
+
+  <h3>介面改了卻沒更新？</h3>
+  <p>在瀏覽器按 <kbd>Ctrl</kbd> + <kbd>F5</kbd> 強制重新載入。</p>
+
+  <h3>想要更聰明的判讀？</h3>
+  <p>免費模式只抓「字面上」出現的違規詞，像「讓你告別藥罐子」這種暗示療效卻沒有關鍵字的句子抓不到。
+  若要語意判讀，在程式資料夾建立 <code>api_key.txt</code>，內容貼上 Anthropic API 金鑰
+  （<code>sk-ant-</code> 開頭）後重新啟動。</p>
+  <div class="note warn">
+    <span class="lbl">注意</span>
+    <p>API 金鑰等同密碼且<strong>按使用量計費</strong>，請勿外流。
+    啟用後廣告截圖會傳送到外部 AI 服務，含個資的畫面請不要上傳。</p>
+  </div>
+</section>
+
+<section id="privacy">
+  <h2>資料與隱私</h2>
+  <ul>
+    <li><strong>免費模式全程在你的電腦上執行</strong>，廣告圖片不會離開這台機器</li>
+    <li>檢舉人姓名、電話、Email <strong>只存在瀏覽器記憶體</strong>，不會上傳也不會存檔</li>
+    <li>只有在你主動設定 API 金鑰、啟用 AI 模式時，截圖才會傳送到外部服務</li>
+    <li>程式沒有連外統計、沒有使用紀錄回傳</li>
+  </ul>
+</section>
+
+<section id="files">
+  <h2>檔案結構</h2>
+  <div class="tree">
+<b>違規廣告快篩.exe</b>      <i>主程式，雙擊這個</i>
+<b>ocr.ps1</b>              <i>Windows 內建 OCR 腳本</i>
+<b>regulations.json</b>     <i>法規與違規關鍵字資料庫</i>
+<b>static/index.html</b>    <i>操作介面</i>
+<b>功能使用說明書.html</b>    <i>本文件</i>
+<b>使用說明.txt</b>          <i>純文字版快速說明</i>
+<b>SPEC/</b>                <i>需求規格書</i>
+<b>說明文件/</b>             <i>版本紀錄、關鍵字來源與依據</i>
+<b>測試資料/</b>             <i>六張測試圖與預期結果</i>
+<b>實作作業/</b>             <i>前端原始碼與建置腳本</i>
+<b>設計素材/</b>             <i>logo 與介面設計參考</i>
+<b>版本封存/</b>             <i>各版本壓縮檔</i>
+  </div>
+  <div class="note warn">
+    <span class="lbl">搬移時注意</span>
+    <p>前四項（exe、<code>ocr.ps1</code>、<code>regulations.json</code>、<code>static</code> 資料夾）
+    必須維持現在的相對位置，程式才找得到。其餘資料夾只是文件與素材，刪掉不影響執行。</p>
+    <p>要改介面請改 <code>實作作業/</code> 裡的原始檔，改完執行 <code>python build.py</code>；
+    直接改 <code>static/index.html</code> 會在下次建置時被覆蓋。</p>
+  </div>
+</section>
+
+<footer>
+  <p>AI 違規廣告快篩與一鍵通報系統 v6　·　本說明書可離線開啟，也可直接列印。</p>
+  <p>AI 判定僅供參考，實際違規認定與裁罰以主管機關為準；
+  法條內容請以全國法規資料庫（law.moj.gov.tw）現行條文為準。</p>
+</footer>
+
+</main>
+</div>
+
+<script>
+// 目錄跟著捲動highlight；無 IntersectionObserver 時靜默略過，不影響閱讀
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('nav a'));
+  var map = {};
+  links.forEach(function (a) {
+    var el = document.getElementById(a.getAttribute('href').slice(1));
+    if (el) map[el.id] = a;
+  });
+  if (!window.IntersectionObserver) return;
+  var seen = {};
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { seen[e.target.id] = e.isIntersecting; });
+    var current = Object.keys(map).filter(function (id) { return seen[id]; })[0];
+    if (!current) return;
+    links.forEach(function (a) { a.classList.remove('on'); });
+    map[current].classList.add('on');
+  }, { rootMargin: '-10% 0px -70% 0px' });
+  Object.keys(map).forEach(function (id) { io.observe(document.getElementById(id)); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>違規廣告快篩 v2</title>
+<style>
+/* ── CSS 變數 ── */
+:root {
+  --primary: #0f6c8c;
+  --primary-dark: #0a4d64;
+  --accent: #e8a33d;
+  --bg: #f4f7f9;
+  --card: #ffffff;
+  --text: #1f2d36;
+  --muted: #6b7f8c;
+  --danger: #c0392b;
+  --warn: #d68910;
+  --ok: #1e8449;
+  --border: #dde5ea;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Microsoft JhengHei","Segoe UI",sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+
+/* ── Header ── */
+header { background: linear-gradient(120deg, var(--primary-dark), var(--primary)); color: #fff; padding: 20px 32px; display: flex; align-items: center; gap: 16px; }
+header h1 { font-size: 1.35rem; letter-spacing: 1px; }
+header p  { opacity: .85; font-size: .85rem; margin-top: 4px; }
+
+/* ── Layout ── */
+main { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 22px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+.card h2 { font-size: 1.05rem; color: var(--primary-dark); margin-bottom: 12px; border-left: 4px solid var(--accent); padding-left: 10px; }
+.row { display: flex; gap: 14px; flex-wrap: wrap; }
+.row > div { flex: 1; min-width: 200px; }
+.center { text-align: center; margin: 6px 0 2px; }
+.hidden { display: none !important; }
+
+/* ── Banner ── */
+.banner { padding: 10px 14px; border-radius: 8px; font-size: .85rem; margin-bottom: 10px; }
+.banner.ai   { background: #e8f4ea; color: #1e6b34; border: 1px solid #bcdec5; }
+.banner.demo { background: #fdf3e0; color: #8a5a08; border: 1px solid #f0d9a8; }
+
+/* ── Inline 錯誤 / 成功提示（取代 alert）── */
+.toast { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; font-size: .88rem; animation: fadeIn .2s ease; }
+.toast.error   { background: #fdf2f2; border: 1px solid #f5c6c6; color: var(--danger); }
+.toast.warning { background: #fff8ec; border: 1px solid #fcd98a; color: #7a4f00; }
+.toast.success { background: #eefaf2; border: 1px solid #9dd9b8; color: var(--ok); }
+.toast-icon  { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+.toast-body  { flex: 1; }
+.toast-close { cursor: pointer; opacity: .5; font-size: 1rem; background: none; border: none; color: inherit; padding: 0 0 0 8px; }
+.toast-close:hover { opacity: 1; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── 上傳區 ── */
+#drop { border: 2px dashed var(--border); border-radius: 10px; padding: 32px 20px; text-align: center; color: var(--muted); cursor: pointer; transition: .2s; position: relative; }
+#drop:hover, #drop.over { border-color: var(--primary); background: #eef6f9; }
+#drop.has-file { border-color: var(--ok); background: #f2fbf6; }
+#drop .drop-icon { font-size: 2rem; margin-bottom: 6px; }
+#drop .drop-hint { font-size: .8rem; margin-top: 6px; }
+#drop .file-info { font-size: .82rem; color: var(--ok); margin-top: 8px; font-weight: bold; }
+#preview { max-width: 100%; max-height: 280px; margin-top: 12px; border-radius: 8px; display: none; border: 1px solid var(--border); }
+
+/* ── 進度條 ── */
+.progress-wrap { margin: 14px 0 4px; }
+.progress-label { font-size: .82rem; color: var(--muted); margin-bottom: 6px; display: flex; justify-content: space-between; }
+.progress-bar { height: 6px; background: #dde5ea; border-radius: 3px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width .4s ease; width: 0%; }
+.progress-steps { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.step-chip { font-size: .72rem; padding: 3px 10px; border-radius: 20px; background: #eaf2f7; color: var(--muted); border: 1px solid var(--border); }
+.step-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.step-chip.done   { background: #d4edda; color: var(--ok); border-color: #9dd9b8; }
+
+/* ── OCR bar ── */
+.ocrbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; padding: 9px 13px; border-radius: 8px; background: #eef6f9; border: 1px solid var(--border); font-size: .82rem; color: var(--primary-dark); }
+.ocrbar span { flex: 1; min-width: 200px; }
+
+/* ── Forms ── */
+textarea, input, select { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px; font: inherit; font-size: .9rem; transition: border-color .15s; }
+textarea:focus, input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(15,108,140,.1); }
+textarea { resize: vertical; min-height: 90px; }
+label { font-size: .82rem; color: var(--muted); display: block; margin: 10px 0 4px; }
+.field-error { font-size: .78rem; color: var(--danger); margin-top: 3px; }
+input.invalid, select.invalid { border-color: var(--danger); }
+
+/* ── Buttons ── */
+button { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 11px 26px; font: inherit; font-size: .95rem; cursor: pointer; transition: .2s; display: inline-flex; align-items: center; gap: 8px; }
+button:hover:not(:disabled) { background: var(--primary-dark); }
+button:disabled { background: #9db6c1; cursor: not-allowed; opacity: .8; }
+button.secondary { background: #fff; color: var(--primary); border: 1px solid var(--primary); }
+button.secondary:hover:not(:disabled) { background: var(--primary); color: #fff; }
+button.danger { background: var(--danger); }
+button.danger:hover:not(:disabled) { background: #962d22; }
+button.mini { background: #fff; color: var(--primary); border: 1px solid var(--primary); padding: 5px 13px; font-size: .78rem; border-radius: 6px; }
+button.mini:hover:not(:disabled) { background: var(--primary); color: #fff; }
+.btn-spin { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: sp .7s linear infinite; }
+.btn-spin.dark { border-color: rgba(15,108,140,.3); border-top-color: var(--primary); }
+
+/* ── 違規項目 ── */
+.vio { border: 1px solid var(--border); border-left: 5px solid var(--danger); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; background: #fffafa; }
+.vio.type-誇大不實 { border-left-color: var(--warn); background: #fffdf6; }
+.vio .quote { font-weight: bold; font-size: 1rem; }
+.vio .tag { display: inline-block; font-size: .72rem; padding: 2px 9px; border-radius: 20px; color: #fff; background: var(--danger); margin-left: 8px; vertical-align: middle; }
+.vio.type-誇大不實 .tag { background: var(--warn); }
+.vio .law { margin-top: 8px; font-size: .85rem; background: #f2f7fa; border-radius: 6px; padding: 9px 12px; }
+.vio .law a { color: var(--primary); }
+.vio .conf { font-size: .75rem; color: var(--muted); margin-top: 6px; }
+
+/* ── 結果 meta ── */
+.meta { display: flex; gap: 24px; flex-wrap: wrap; font-size: .88rem; margin-bottom: 14px; }
+.meta b { color: var(--primary-dark); }
+.risk { font-weight: bold; }
+.risk.高 { color: var(--danger); }
+.risk.中 { color: var(--warn); }
+.risk.低, .risk.無明顯違規 { color: var(--ok); }
+
+/* ── 陳情信 ── */
+#letterPreview { white-space: pre-wrap; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 28px 32px; font-size: .92rem; font-family: "Microsoft JhengHei", serif; }
+.disclaimer { font-size: .78rem; color: var(--muted); margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 10px; }
+
+/* ── 進階設定 ── */
+details.cfg { background: #fff; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 18px; font-size: .85rem; }
+details.cfg summary { cursor: pointer; padding: 9px 14px; color: var(--primary-dark); font-size: .82rem; user-select: none; }
+details.cfg[open] summary { border-bottom: 1px solid var(--border); }
+.cfgbody { padding: 12px 16px 16px; }
+.cfgbody p { font-size: .82rem; color: var(--muted); margin-bottom: 8px; }
+.keyrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.keyrow input { flex: 1; min-width: 220px; }
+
+/* ── Misc ── */
+@keyframes sp { to { transform: rotate(360deg); } }
+.spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #c5dbe4; border-top-color: var(--primary); border-radius: 50%; animation: sp .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+.hint { font-size: .78rem; color: var(--muted); margin-top: 8px; }
+.hint a { color: var(--primary); }
+footer { text-align: center; color: var(--muted); font-size: .75rem; padding: 20px; }
+@media print {
+  body * { visibility: hidden; }
+  #letterPreview, #letterPreview * { visibility: visible; }
+  #letterPreview { position: absolute; left: 0; top: 0; width: 100%; border: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══ Header ══ -->
+<header>
+  <div>
+    <h1>AI 違規廣告快篩與一鍵通報系統 <small style="font-size:.7em;opacity:.8">v2</small></h1>
+    <p>美白 / 保健食品廣告 — 上傳截圖，自動列出違規點並生成衛生局陳情信</p>
+  </div>
+</header>
+
+<main>
+
+  <!-- 系統狀態橫幅 -->
+  <div id="banner" class="banner demo" data-testid="banner">正在確認系統狀態…</div>
+
+  <!-- 全域錯誤訊息容器（取代 alert） -->
+  <div id="globalMsg" data-testid="global-msg"></div>
+
+  <!-- 進階設定 -->
+  <details class="cfg" id="aiCfg">
+    <summary>⚙ 進階設定：啟用免費 AI 語意分析（選填）</summary>
+    <div class="cfgbody">
+      <p>免費模式是「OCR 辨識文字 → 比對關鍵字」，只抓得到字面上的違規詞。若想要真正的語意判讀
+         （例如「讓你告別藥罐子」這種沒有關鍵字、卻實質暗示療效的句子），可以申請 Google AI Studio 的
+         <b>免費</b>金鑰貼在下面。金鑰只存在這台電腦的瀏覽器（localStorage），不會傳給本程式。</p>
+      <label>Google Gemini API 金鑰（留空 = 不使用，維持免費 OCR 模式）</label>
+      <div class="keyrow">
+        <input id="gKey" type="password" placeholder="AIza…（選填）" autocomplete="off" data-testid="gemini-key-input">
+        <button class="mini" id="gSave" data-testid="gemini-key-save">儲存</button>
+        <button class="mini" id="gClear" data-testid="gemini-key-clear">清除</button>
+      </div>
+      <p class="hint">免費金鑰申請：<a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>
+         　⚠ 免費額度有每日上限；啟用後廣告截圖會傳送到 Google 伺服器，請勿上傳含個資的畫面。</p>
+    </div>
+  </details>
+
+  <!-- ── Step 1：上傳 ── -->
+  <div class="card" data-testid="upload-card">
+    <h2>Step 1　上傳廣告素材</h2>
+
+    <!-- 上傳區域 -->
+    <div id="drop" data-testid="drop-zone" role="button" tabindex="0" aria-label="點擊或拖曳廣告截圖">
+      <div class="drop-icon">🖼️</div>
+      <div>點擊或拖曳廣告截圖到這裡</div>
+      <div class="drop-hint">支援 JPG / PNG / WebP，單檔上限 10 MB<br>也可以直接按 <kbd>Ctrl + V</kbd> 貼上截圖</div>
+      <div class="file-info hidden" id="fileInfo" data-testid="file-info"></div>
+    </div>
+    <input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" data-testid="file-input">
+
+    <!-- 上傳區錯誤 -->
+    <div id="uploadError" data-testid="upload-error"></div>
+
+    <!-- 預覽圖 -->
+    <img id="preview" alt="廣告預覽" data-testid="preview-img">
+
+    <!-- OCR 狀態列 -->
+    <div class="ocrbar hidden" id="ocrBar" data-testid="ocr-bar">
+      <span id="ocrStatus" data-testid="ocr-status">—</span>
+      <button class="mini" id="ocrBtn" data-testid="ocr-btn">用瀏覽器 OCR 再補一次</button>
+    </div>
+
+    <label for="adText">廣告文字（圖片辨識結果會自動填入，可自行修正）</label>
+    <textarea id="adText" data-testid="ad-text" placeholder="例如：本產品 7 天美白、有效消除腫瘤、根治過敏……"></textarea>
+
+    <!-- 分析進度條 -->
+    <div class="progress-wrap hidden" id="progressWrap" data-testid="progress-wrap">
+      <div class="progress-label">
+        <span id="progressText" data-testid="progress-text">準備中…</span>
+        <span id="progressPct" data-testid="progress-pct">0%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill" data-testid="progress-fill"></div></div>
+      <div class="progress-steps">
+        <span class="step-chip" id="step-ocr" data-testid="step-ocr">① OCR 辨識</span>
+        <span class="step-chip" id="step-match" data-testid="step-match">② 規則比對</span>
+        <span class="step-chip" id="step-done" data-testid="step-done">③ 完成</span>
+      </div>
+    </div>
+
+    <div class="center" style="margin-top:16px">
+      <button id="analyzeBtn" data-testid="analyze-btn">
+        <span id="analyzeBtnIcon">🔍</span>
+        <span id="analyzeBtnText">開始快篩分析</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Step 2：快篩結果 ── -->
+  <div class="card hidden" id="resultCard" data-testid="result-card">
+    <h2>Step 2　快篩結果</h2>
+    <div class="meta">
+      <span>產品：<b id="rProduct" data-testid="r-product"></b></span>
+      <span>類別：<b id="rType" data-testid="r-type"></b></span>
+      <span>風險等級：<span class="risk" id="rRisk" data-testid="r-risk"></span></span>
+    </div>
+    <p id="rSummary" data-testid="r-summary" style="font-size:.9rem;margin-bottom:14px"></p>
+    <div id="vioList" data-testid="vio-list"></div>
+    <div style="margin-top:14px">
+      <button class="mini" id="reAnalyzeBtn" data-testid="re-analyze-btn">↩ 修改文字重新分析</button>
+    </div>
+    <div class="disclaimer">⚠ AI 判定僅供參考，實際違規認定與裁罰以主管機關為準。法條內容請以「全國法規資料庫」現行條文為準。</div>
+  </div>
+
+  <!-- ── Step 3：陳情信欄位 ── -->
+  <div class="card hidden" id="letterCard" data-testid="letter-card">
+    <h2>Step 3　生成陳情信</h2>
+    <div class="row">
+      <div>
+        <label for="fProduct">產品名稱</label>
+        <input id="fProduct" data-testid="f-product" placeholder="例：超級美白丸">
+        <div class="field-error hidden" id="err-fProduct"></div>
+      </div>
+      <div>
+        <label for="fType">產品類別</label>
+        <select id="fType" data-testid="f-type">
+          <option>無法判定</option><option>食品</option><option>健康食品</option>
+          <option>化粧品</option><option>藥品</option><option>醫療器材</option><option>其他</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="fOrg">受文機關（縣市衛生局）</label>
+        <select id="fOrg" data-testid="f-org">
+          <option>臺北市政府衛生局</option><option>新北市政府衛生局</option><option>桃園市政府衛生局</option>
+          <option>臺中市政府衛生局</option><option>臺南市政府衛生局</option><option>高雄市政府衛生局</option>
+          <option>基隆市衛生局</option><option>新竹市衛生局</option><option>新竹縣政府衛生局</option>
+          <option>苗栗縣政府衛生局</option><option>彰化縣衛生局</option><option>南投縣政府衛生局</option>
+          <option>雲林縣衛生局</option><option>嘉義市政府衛生局</option><option>嘉義縣衛生局</option>
+          <option>屏東縣政府衛生局</option><option>宜蘭縣政府衛生局</option><option>花蓮縣衛生局</option>
+          <option>臺東縣衛生局</option><option>澎湖縣政府衛生局</option><option>金門縣衛生局</option>
+          <option>連江縣衛生福利局</option>
+        </select>
+      </div>
+      <div>
+        <label for="fPlatform">廣告刊登平台</label>
+        <input id="fPlatform" data-testid="f-platform" placeholder="例：Facebook / Instagram / 蝦皮 / 官網">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="fUrl">廣告網址</label>
+        <input id="fUrl" data-testid="f-url" placeholder="https://…">
+        <div class="field-error hidden" id="err-fUrl"></div>
+      </div>
+      <div>
+        <label for="fDate">發現日期</label>
+        <input id="fDate" type="date" data-testid="f-date">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="fName">檢舉人姓名 <span style="color:var(--danger)">*</span></label>
+        <input id="fName" data-testid="f-name" placeholder="（必填，供衛生局聯繫與核發獎金）">
+        <div class="field-error hidden" id="err-fName">請填寫檢舉人姓名</div>
+      </div>
+      <div>
+        <label for="fContact">聯絡電話 / Email <span style="color:var(--danger)">*</span></label>
+        <input id="fContact" data-testid="f-contact" placeholder="0912-345-678 / mail@example.com">
+        <div class="field-error hidden" id="err-fContact">請填寫聯絡方式</div>
+      </div>
+    </div>
+    <div class="center" style="margin-top:16px">
+      <button id="genBtn" data-testid="gen-btn">生成陳情信</button>
+    </div>
+  </div>
+
+  <!-- ── Step 4：陳情信預覽 ── -->
+  <div class="card hidden" id="previewCard" data-testid="preview-card">
+    <h2>Step 4　陳情信預覽</h2>
+    <div id="letterPreview" data-testid="letter-preview"></div>
+    <div class="center" style="margin-top:16px;gap:10px;display:flex;justify-content:center;flex-wrap:wrap">
+      <button onclick="window.print()" data-testid="print-btn">列印 / 存成 PDF</button>
+      <button class="secondary" id="copyBtn" data-testid="copy-btn">複製全文</button>
+      <button class="secondary" id="resetBtn" data-testid="reset-btn">🔄 重新開始</button>
+    </div>
+    <div class="disclaimer">寄送方式：可透過各縣市衛生局線上陳情系統、衛福部食藥署陳情檢舉信箱，或以書面郵寄。請一併附上廣告截圖。</div>
+  </div>
+
+</main>
+<footer>違規廣告快篩系統 v2 — AI 判定僅供參考，實際違規認定以主管機關為準。個資僅在本機瀏覽器處理，不上傳雲端。</footer>
+
+<script>
+/* ═══════════════════════════════════════════
+   工具函式
+═══════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/**
+ * 顯示 inline toast 訊息（取代 alert）
+ * @param {string} container - 容器元素 id
+ * @param {string} type      - 'error' | 'warning' | 'success'
+ * @param {string} msg       - 訊息內容（支援 HTML）
+ */
+function showMsg(containerId, type, msg) {
+  const c = $(containerId);
+  if (!c) return;
+  const icons = { error: '❌', warning: '⚠️', success: '✅' };
+  const div = document.createElement('div');
+  div.className = 'toast ' + type;
+  div.innerHTML = `<span class="toast-icon">${icons[type]||'ℹ️'}</span>`
+                + `<span class="toast-body">${msg}</span>`
+                + `<button class="toast-close" aria-label="關閉">✕</button>`;
+  div.querySelector('.toast-close').onclick = () => div.remove();
+  c.innerHTML = '';
+  c.appendChild(div);
+}
+
+function clearMsg(containerId) {
+  const c = $(containerId);
+  if (c) c.innerHTML = '';
+}
+
+/** 欄位驗證錯誤顯示 */
+function setFieldError(fieldId, msg) {
+  const el = $(fieldId);
+  const err = $('err-' + fieldId);
+  if (el) el.classList.toggle('invalid', !!msg);
+  if (err) { err.textContent = msg || ''; err.classList.toggle('hidden', !msg); }
+}
+
+/* ═══════════════════════════════════════════
+   進度條控制
+═══════════════════════════════════════════ */
+const STEPS = ['ocr', 'match', 'done'];
+function progressShow() {
+  $('progressWrap').classList.remove('hidden');
+  STEPS.forEach(s => {
+    $('step-' + s).classList.remove('active', 'done');
+  });
+  setProgress(0, '準備中…');
+}
+function progressHide() {
+  $('progressWrap').classList.add('hidden');
+}
+function setProgress(pct, label, activeStep) {
+  $('progressFill').style.width = pct + '%';
+  $('progressText').textContent = label;
+  $('progressPct').textContent = pct + '%';
+  if (activeStep) {
+    STEPS.forEach(s => {
+      const el = $('step-' + s);
+      const idx = STEPS.indexOf(s);
+      const activeIdx = STEPS.indexOf(activeStep);
+      el.classList.toggle('active', s === activeStep);
+      el.classList.toggle('done', idx < activeIdx);
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════
+   分析按鈕狀態
+═══════════════════════════════════════════ */
+function setBtnLoading(loading) {
+  const btn = $('analyzeBtn');
+  btn.disabled = loading;
+  $('analyzeBtnIcon').innerHTML = loading ? '<span class="btn-spin"></span>' : '🔍';
+  $('analyzeBtnText').textContent = loading ? '分析中…' : '開始快篩分析';
+}
+
+/* ═══════════════════════════════════════════
+   狀態 / 模式橫幅
+═══════════════════════════════════════════ */
+let imageB64 = null, mediaType = null, analysis = null;
+let rawDataUrl = null, aiEnabled = false;
+let lastOcrText = '', ocrBusy = false;
+let serverOcr = null;
+
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+const gKeyGet = () => (localStorage.getItem('gemini_key') || '').trim();
+
+fetch('/api/status').then(r => r.json())
+  .then(s => { aiEnabled = !!s.ai_enabled; refreshBanner(); })
+  .catch(() => refreshBanner());
+
+function refreshBanner() {
+  const b = $('banner');
+  if (aiEnabled) {
+    b.className = 'banner ai';
+    b.innerHTML = '✅ <b>Claude AI 模式</b>已啟用 — 圖片直接送 AI 視覺辨識與語意分析。';
+  } else if (gKeyGet()) {
+    b.className = 'banner ai';
+    b.innerHTML = '✅ <b>免費 AI 模式</b>（Google Gemini 免費額度）— 語意分析，不需付費金鑰。';
+  } else {
+    b.className = 'banner demo';
+    b.innerHTML = '🆓 <b>免費模式</b>：Windows 內建 OCR 辨識圖片文字，再比對法規關鍵字 — 全程本機執行、不需 API 金鑰。'
+                + '想要 AI 語意判讀請展開上方「進階設定」。';
+  }
+}
+
+/* ═══════════════════════════════════════════
+   Gemini 金鑰設定
+═══════════════════════════════════════════ */
+$('gKey').value = gKeyGet();
+$('gSave').onclick = () => {
+  const v = $('gKey').value.trim();
+  if (v) localStorage.setItem('gemini_key', v); else localStorage.removeItem('gemini_key');
+  refreshBanner();
+  showMsg('globalMsg', 'success', v ? '已儲存 Gemini 金鑰，之後上傳圖片會改用免費 AI 分析。' : '已清除金鑰，回到免費 OCR 模式。');
+};
+$('gClear').onclick = () => {
+  localStorage.removeItem('gemini_key'); $('gKey').value = ''; refreshBanner();
+  showMsg('globalMsg', 'success', '已清除 Gemini 金鑰。');
+};
+
+/* ═══════════════════════════════════════════
+   上傳區：點選 / 拖曳 / 貼上
+═══════════════════════════════════════════ */
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+
+const drop = $('drop'), fileInput = $('file');
+
+drop.onclick = () => fileInput.click();
+drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); };
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => {
+  e.preventDefault(); drop.classList.remove('over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+};
+fileInput.onchange = () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); };
+document.addEventListener('paste', e => {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  const item = [].slice.call(items).find(i => i.type.indexOf('image/') === 0);
+  if (item) { e.preventDefault(); loadFile(item.getAsFile()); }
+});
+
+function loadFile(f) {
+  if (!f) return;
+  clearMsg('uploadError');
+
+  // ── 即時驗證 ──
+  if (!ALLOWED_TYPES.includes(f.type)) {
+    showMsg('uploadError', 'error', '不支援的格式：' + (f.type || '未知') + '。請上傳 JPG / PNG / WebP 圖片。');
+    return;
+  }
+  if (f.size > MAX_FILE_SIZE) {
+    const mb = (f.size / 1024 / 1024).toFixed(1);
+    showMsg('uploadError', 'error', '檔案太大（' + mb + ' MB），上限為 10 MB。請壓縮後再試。');
+    return;
+  }
+
+  mediaType = f.type;
+  const reader = new FileReader();
+  reader.onload = () => {
+    rawDataUrl = reader.result;
+    imageB64 = rawDataUrl.split(',')[1];
+
+    // 更新上傳區外觀
+    const img = $('preview');
+    img.src = rawDataUrl;
+    img.style.display = 'block';
+    drop.classList.add('has-file');
+    const sizeKb = f.size < 1024 * 1024
+      ? (f.size / 1024).toFixed(0) + ' KB'
+      : (f.size / 1024 / 1024).toFixed(1) + ' MB';
+    $('fileInfo').textContent = (f.name || '剪貼簿圖片') + '　' + sizeKb;
+    $('fileInfo').classList.remove('hidden');
+
+    // 換圖時清掉上次 OCR 結果
+    const ta = $('adText');
+    if (lastOcrText && ta.value.trim() === lastOcrText) { ta.value = ''; lastOcrText = ''; }
+
+    if (aiEnabled || gKeyGet()) {
+      $('ocrBar').classList.add('hidden');
+    } else if (serverOcr === false) {
+      runOCR(true);
+    } else {
+      ocrMsg('圖片已載入 — 按「開始快篩分析」，系統會先用 Windows 內建 OCR 讀取文字。');
+    }
+  };
+  reader.readAsDataURL(f);
+}
+
+/* ═══════════════════════════════════════════
+   瀏覽器 OCR（tesseract.js）
+═══════════════════════════════════════════ */
+const TESS_CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+let tessWorkerP = null, tessProgress = null;
+const MAX_SIDE = 4000;
+const CJK = '\\u3000-\\u303f\\u4e00-\\u9fff\\uf900-\\ufaff\\uff00-\\uffef';
+
+function ocrMsg(text, busy) {
+  $('ocrBar').classList.remove('hidden');
+  $('ocrStatus').innerHTML = (busy ? '<span class="spin"></span>' : '') + esc(text);
+}
+function loadScript(src) {
+  return new Promise((ok, err) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = ok;
+    s.onerror = () => err(new Error('無法載入辨識元件，請確認網路連線'));
+    document.head.appendChild(s);
+  });
+}
+function loadImg(dataUrl) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onerror = () => rej(new Error('圖片無法讀取'));
+    img.onload = () => res(img);
+    img.src = dataUrl;
+  });
+}
+function rescale(img, scale) {
+  if (Math.abs(scale - 1) < 0.01) return img.src;
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.naturalWidth * scale);
+  c.height = Math.round(img.naturalHeight * scale);
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/png');
+}
+function toHalfWidth(s) {
+  return s.replace(/[０-９Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+}
+function tidyCJK(s) {
+  return toHalfWidth(String(s || ''))
+    .replace(/\r/g, '').replace(/[ \t\u00a0]+/g, ' ')
+    .replace(new RegExp('([' + CJK + ']) (?=[' + CJK + '0-9A-Za-z])', 'g'), '$1')
+    .replace(new RegExp('([0-9A-Za-z]) (?=[' + CJK + '])', 'g'), '$1')
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+const charCount = s => String(s || '').replace(/\s/g, '').length;
+
+function getTessWorker() {
+  if (!tessWorkerP) {
+    tessWorkerP = (async () => {
+      if (!window.Tesseract) await loadScript(TESS_CDN);
+      return await Tesseract.createWorker('chi_tra+eng', 1, {
+        logger: m => { if (tessProgress) tessProgress(m); }
+      });
+    })().catch(e => { tessWorkerP = null; throw e; });
+  }
+  return tessWorkerP;
+}
+
+async function runOCR(auto) {
+  if (!rawDataUrl || ocrBusy) return;
+  ocrBusy = true;
+  const ta = $('adText');
+  try {
+    ocrMsg('讀取圖片…', true);
+    const img = await loadImg(rawDataUrl);
+    const longSide = Math.max(img.naturalWidth, img.naturalHeight);
+    const shortSide = Math.min(img.naturalWidth, img.naturalHeight);
+    const first = longSide > MAX_SIDE ? rescale(img, MAX_SIDE / longSide) : rawDataUrl;
+    ocrMsg('載入中文辨識模型…（第一次約需下載 9 MB，之後會自動快取）', true);
+    tessProgress = m => {
+      if (m.status === 'recognizing text')
+        ocrMsg('辨識文字中… ' + Math.round((m.progress || 0) * 100) + '%', true);
+      else if (m.status) ocrMsg(m.status + '…', true);
+    };
+    const worker = await getTessWorker();
+    let text = tidyCJK((await worker.recognize(first)).data.text);
+    if (charCount(text) < 10 && shortSide < 1000) {
+      ocrMsg('文字太少，放大後再試…', true);
+      const retry = tidyCJK((await worker.recognize(rescale(img, 2))).data.text);
+      if (charCount(retry) > charCount(text)) text = retry;
+    }
+    tessProgress = null;
+    if (!text) {
+      ocrMsg('⚠ 沒有辨識到文字 — 請把廣告文案手動貼到下方欄位。');
+      return;
+    }
+    const cur = ta.value.trim();
+    let note = '';
+    if (!cur) { ta.value = text; }
+    else if (auto) { if (cur === lastOcrText) ta.value = text; }
+    else if (cur.indexOf(text) < 0) { ta.value = cur + '\n' + text; note = '（已附加在原本的文字後面）'; }
+    lastOcrText = text;
+    ocrMsg('✅ 辨識出 ' + charCount(text) + ' 個字' + note + ' — 請確認並修正後再按「開始快篩分析」。');
+  } catch (e) {
+    tessProgress = null;
+    ocrMsg('⚠ 辨識失敗：' + e.message + ' — 請把廣告文案手動貼到下方欄位。');
+  } finally {
+    ocrBusy = false;
+  }
+}
+$('ocrBtn').onclick = () => runOCR(false);
+
+/* ═══════════════════════════════════════════
+   免費 AI 分析（Google Gemini）
+═══════════════════════════════════════════ */
+const LAWS = {
+  'fsa-28-1': {law_name:'食品安全衛生管理法',article:'第28條第1項',
+    summary:'食品、食品添加物等，其標示、宣傳或廣告，不得有不實、誇張或易生誤解之情形。',
+    penalty:'依同法第45條第1項，處新臺幣4萬元以上400萬元以下罰鍰。',
+    url:'https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=L0040001&flno=28'},
+  'fsa-28-2': {law_name:'食品安全衛生管理法',article:'第28條第2項',
+    summary:'食品不得為醫療效能之標示、宣傳或廣告。',
+    penalty:'依同法第45條第1項，處新臺幣60萬元以上500萬元以下罰鍰。',
+    url:'https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=L0040001&flno=28'},
+  'cos-10-1': {law_name:'化粧品衛生安全管理法',article:'第10條第1項',
+    summary:'化粧品之標示、宣傳及廣告內容，不得有虛偽或誇大之情事。',
+    penalty:'依同法第20條第1項，處新臺幣4萬元以上20萬元以下罰鍰。',
+    url:'https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=L0030013&flno=10'},
+  'cos-10-2': {law_name:'化粧品衛生安全管理法',article:'第10條第2項',
+    summary:'化粧品不得為醫療效能之標示、宣傳或廣告。',
+    penalty:'依同法第20條第1項，處新臺幣60萬元以上500萬元以下罰鍰。',
+    url:'https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=L0030013&flno=10'},
+  'hf-14-1': {law_name:'健康食品管理法',article:'第14條第1項',
+    summary:'健康食品之標示或廣告不得有虛偽不實、誇張之內容，宣稱之保健效能不得超過許可範圍。',
+    penalty:'依同法第24條規定處罰。',
+    url:'https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=L0040012&flno=14'},
+  'hf-14-2': {law_name:'健康食品管理法',article:'第14條第2項',
+    summary:'健康食品之標示或廣告，不得涉及醫療效能之內容。',
+    penalty:'依同法第24條規定處罰。',
+    url:'https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=L0040012&flno=14'},
+  'pha-69': {law_name:'藥事法',article:'第69條',
+    summary:'非藥品、非醫療器材，不得為醫療效能之標示或宣傳。',
+    penalty:'依同法第91條第2項處罰。',
+    url:'https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=L0030001&flno=69'}
+};
+
+function geminiPrompt() {
+  const lawList = Object.keys(LAWS).map(id =>
+    '- ' + id + '：《' + LAWS[id].law_name + '》' + LAWS[id].article + ' — ' + LAWS[id].summary).join('\n');
+  return '你是台灣食品藥物管理法規稽查專員。請檢視這張廣告截圖，找出違反下列法規的宣傳字句。\n\n'
+    + '可引用的法條：\n' + lawList + '\n\n'
+    + '請只輸出 JSON，格式如下：\n'
+    + '{"product_name":"...","product_type":"食品／健康食品／化粧品／藥品／醫療器材／其他／無法判定","ad_text":"...","risk_level":"高／中／低／無明顯違規","overall_assessment":"...","violations":[{"quote":"...","violation_type":"誇大不實或宣稱醫療效能","reason":"...","law_id":"...","confidence":"高／中／低"}]}\n\n'
+    + '使用者補充的廣告文字：\n' + ($('adText').value.trim() || '（無）');
+}
+
+async function analyzeWithGemini() {
+  const key = gKeyGet();
+  const body = {
+    contents: [{ role: 'user', parts: [
+      { text: geminiPrompt() },
+      { inline_data: { mime_type: mediaType || 'image/png', data: imageB64 } }
+    ]}],
+    generationConfig: { temperature: 0, responseMimeType: 'application/json' }
+  };
+  let lastErr = null;
+  for (const model of GEMINI_MODELS) {
+    let r, j;
+    try {
+      r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model +
+        ':generateContent?key=' + encodeURIComponent(key),
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      j = await r.json();
+    } catch (e) { throw new Error('無法連線 Google API（請確認網路）：' + e.message); }
+    if (!r.ok) {
+      const msg = (j && j.error && j.error.message) || ('HTTP ' + r.status);
+      lastErr = new Error(msg);
+      if (r.status === 404 || /not found|unsupported/i.test(msg)) continue;
+      if (r.status === 400 && /API key/i.test(msg)) throw new Error('Gemini 金鑰無效，請到上方「進階設定」重新貼一次。');
+      if (r.status === 429) throw new Error('已超過 Gemini 免費額度上限，請稍後再試。');
+      throw lastErr;
+    }
+    const cand = (j.candidates && j.candidates[0]) || {};
+    const parts = (cand.content && cand.content.parts) || [];
+    const raw = parts.map(p => p.text || '').join('').replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'').trim();
+    if (!raw) { lastErr = new Error('AI 沒有回傳內容'); continue; }
+    return normalizeAI(JSON.parse(raw), model);
+  }
+  throw new Error('免費 AI 分析失敗：' + (lastErr ? lastErr.message : '未知錯誤'));
+}
+
+function normalizeAI(d, model) {
+  const vios = (d.violations || []).map(v => {
+    const law = LAWS[v.law_id] || LAWS['fsa-28-1'];
+    return { quote: v.quote||'', reason: v.reason||'',
+             violation_type: v.violation_type === '誇大不實' ? '誇大不實' : '宣稱醫療效能',
+             confidence: v.confidence||'中', law: Object.assign({ id: v.law_id }, law) };
+  });
+  if (d.ad_text && !$('adText').value.trim()) $('adText').value = d.ad_text;
+  return {
+    mode: 'gemini', product_name: d.product_name||'未標示', product_type: d.product_type||'無法判定',
+    risk_level: d.risk_level||(vios.length?'中':'無明顯違規'),
+    overall_assessment: (d.overall_assessment||'') + '（Google Gemini，模型：' + model + '）',
+    violations: vios
+  };
+}
+
+/* ═══════════════════════════════════════════
+   開始分析
+═══════════════════════════════════════════ */
+$('analyzeBtn').onclick = async () => {
+  const ta = $('adText');
+  clearMsg('globalMsg');
+  if (!imageB64 && !ta.value.trim()) {
+    showMsg('globalMsg', 'warning', '請先上傳廣告截圖，或把廣告文字貼到下方欄位。');
+    return;
+  }
+  setBtnLoading(true);
+  progressShow();
+  try {
+    if (!aiEnabled && gKeyGet() && imageB64) {
+      setProgress(20, '免費 AI（Gemini）分析中，約需 10～30 秒…', 'ocr');
+      analysis = await analyzeWithGemini();
+    } else if (aiEnabled) {
+      setProgress(20, 'Claude AI 分析中，約需 10～60 秒…', 'ocr');
+      analysis = await postAnalyze(imageB64, mediaType, ta.value);
+    } else {
+      analysis = await analyzeFree(ta);
+    }
+    setProgress(100, '分析完成！', 'done');
+    setTimeout(progressHide, 1500);
+    renderResult(analysis);
+  } catch (e) {
+    progressHide();
+    showMsg('globalMsg', 'error', e.message);
+  } finally {
+    setBtnLoading(false);
+  }
+};
+
+function postAnalyze(img, mime, text) {
+  return fetch('/api/analyze', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image_base64: img||null, media_type: img ? mime : null, text: text||'' })
+  }).then(async res => {
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    return data;
+  });
+}
+
+async function analyzeFree(ta) {
+  if (imageB64 && !ta.value.trim() && serverOcr !== false) {
+    setProgress(15, 'Windows 內建 OCR 辨識中…', 'ocr');
+    try {
+      const data = await postAnalyze(imageB64, mediaType, ta.value);
+      serverOcr = true;
+      const got = tidyCJK(data.ad_text);
+      if (charCount(got) >= 10) {
+        ta.value = got; lastOcrText = got;
+        ocrMsg('✅ Windows OCR 辨識出 ' + charCount(got) + ' 個字 — 確認後可直接查看結果，或修正後重新分析。');
+        setProgress(80, '規則比對中…', 'match');
+        return data;
+      }
+      setProgress(30, 'Windows OCR 讀取不足，改用瀏覽器 OCR…', 'ocr');
+    } catch (e) {
+      serverOcr = false;
+      setProgress(30, '改用瀏覽器 OCR…', 'ocr');
+      ocrMsg('Windows OCR 無法使用，改用瀏覽器 OCR…', true);
+    }
+  }
+  if (imageB64 && !ta.value.trim()) {
+    setProgress(40, '瀏覽器 OCR 辨識中…', 'ocr');
+    await runOCR(true);
+  }
+  if (!ta.value.trim()) {
+    throw new Error('圖片沒有辨識出文字，無法分析。\n請把廣告文案手動貼到「廣告文字」欄位後再按一次分析。\n（小技巧：Win + Shift + S 截圖後，在「剪取工具」按「文字動作」可直接複製文字。）');
+  }
+  setProgress(70, '比對法規關鍵字…', 'match');
+  return postAnalyze(null, null, ta.value);
+}
+
+/* ═══════════════════════════════════════════
+   渲染結果
+═══════════════════════════════════════════ */
+function renderResult(d) {
+  $('rProduct').textContent = d.product_name;
+  $('rType').textContent = d.product_type;
+  const risk = $('rRisk');
+  risk.textContent = d.risk_level;
+  risk.className = 'risk ' + d.risk_level;
+  $('rSummary').textContent = d.overall_assessment;
+
+  const list = $('vioList');
+  list.innerHTML = '';
+  if (!d.violations || !d.violations.length) {
+    list.innerHTML = '<p style="color:var(--ok);padding:10px 0">✅ 未偵測到明顯違規字句。</p>';
+  } else {
+    d.violations.forEach((v, i) => {
+      const law = v.law || {};
+      const div = document.createElement('div');
+      div.className = 'vio type-' + v.violation_type;
+      div.setAttribute('data-testid', 'vio-item-' + i);
+      div.innerHTML = `
+        <div class="quote">${i+1}. 「${esc(v.quote)}」<span class="tag">${esc(v.violation_type)}</span></div>
+        <div style="font-size:.88rem;margin-top:5px">${esc(v.reason)}</div>
+        <div class="law">📖 <b>${esc(law.law_name||'')} ${esc(law.article||'')}</b>：${esc(law.summary||'')}<br>
+          ⚖ ${esc(law.penalty||'')}　<a href="${esc(law.url||'#')}" target="_blank">全國法規資料庫 ↗</a></div>
+        <div class="conf">信心程度：${esc(v.confidence)}</div>`;
+      list.appendChild(div);
+    });
+  }
+
+  // 帶入陳情信欄位
+  const known = d.product_name && !/無法辨識|無法判定|未標示/.test(d.product_name);
+  if ($('fProduct')) $('fProduct').value = known ? d.product_name : '';
+  const typeSel = $('fType');
+  if (typeSel && [].some.call(typeSel.options, o => o.value === d.product_type))
+    typeSel.value = d.product_type;
+
+  $('resultCard').classList.remove('hidden');
+  $('letterCard').classList.remove('hidden');
+  $('resultCard').scrollIntoView({ behavior: 'smooth' });
+}
+
+/* 重新分析按鈕 */
+$('reAnalyzeBtn').onclick = () => {
+  $('resultCard').classList.add('hidden');
+  $('letterCard').classList.add('hidden');
+  $('previewCard').classList.add('hidden');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+/* ═══════════════════════════════════════════
+   表單驗證 + 陳情信生成
+═══════════════════════════════════════════ */
+function validateLetterForm() {
+  let ok = true;
+  ['fName', 'fContact'].forEach(id => setFieldError(id, ''));
+
+  if (!$('fName').value.trim()) {
+    setFieldError('fName', '請填寫檢舉人姓名');
+    ok = false;
+  }
+  if (!$('fContact').value.trim()) {
+    setFieldError('fContact', '請填寫聯絡方式');
+    ok = false;
+  }
+  const url = $('fUrl').value.trim();
+  if (url && !/^https?:\/\/.+/.test(url)) {
+    setFieldError('fUrl', '網址格式有誤，請以 http:// 或 https:// 開頭');
+    ok = false;
+  }
+  return ok;
+}
+
+$('genBtn').onclick = () => {
+  if (!analysis) {
+    showMsg('globalMsg', 'warning', '請先完成快篩分析。');
+    return;
+  }
+  if (!validateLetterForm()) return;
+
+  const g = id => $(id).value.trim();
+  const today = new Date();
+  const rocDate = d => {
+    if (!d) return '（未填）';
+    const dt = new Date(d);
+    return `民國 ${dt.getFullYear()-1911} 年 ${dt.getMonth()+1} 月 ${dt.getDate()} 日`;
+  };
+  const vioText = analysis.violations.map((v, i) => {
+    const law = v.law || {};
+    return `　（${i+1}）廣告宣稱「${v.quote}」（${v.violation_type}）：${v.reason}\n`
+         + `　　　涉違反《${law.law_name}》${law.article}：「${law.summary}」\n`
+         + `　　　罰則：${law.penalty}`;
+  }).join('\n\n');
+
+  const pType = g('fType') || analysis.product_type;
+  const pName = g('fProduct') || (/無法辨識|無法判定|未標示/.test(analysis.product_name) ? '（產品名稱未標示）' : analysis.product_name);
+
+  const letter = `受文者：${g('fOrg') || '（縣市）政府衛生局'}
+
+主旨：檢舉疑似違規之${pType !== '無法判定' ? pType : ''}廣告「${pName}」，涉有誇大不實或宣稱醫療效能情事，請惠予查處。
+
+說明：
+
+一、檢舉人於 ${rocDate(g('fDate'))} 在「${g('fPlatform') || '（平台）'}」發現旨揭廣告，網址為：${g('fUrl') || '（網址）'}。
+
+二、該廣告內容經初步檢視，疑有下列違規情事：
+
+${vioText || '　（無）'}
+
+三、上開廣告用語已逾越一般商業宣傳範圍，恐使消費者誤信產品具有醫療或誇大之效能，影響國民健康與消費權益，爰依相關法規檢舉，請貴局依法查處。
+
+四、檢附廣告截圖 ${imageB64 ? '1' : '0'} 份為證。如需補充資料，請與檢舉人聯繫。
+
+五、請貴局依相關規定，於查處屬實後核發檢舉獎金，並依法保密檢舉人身分。
+
+檢舉人：${g('fName')}
+聯絡方式：${g('fContact')}
+陳情日期：民國 ${today.getFullYear()-1911} 年 ${today.getMonth()+1} 月 ${today.getDate()} 日
+
+（本檢舉內容由 AI 快篩系統輔助生成，違規事證之最終認定以主管機關調查結果為準。）`;
+
+  $('letterPreview').textContent = letter;
+  $('previewCard').classList.remove('hidden');
+  $('previewCard').scrollIntoView({ behavior: 'smooth' });
+};
+
+/* ═══════════════════════════════════════════
+   複製 / 重置
+═══════════════════════════════════════════ */
+$('copyBtn').onclick = () => {
+  navigator.clipboard.writeText($('letterPreview').textContent)
+    .then(() => showMsg('globalMsg', 'success', '已複製到剪貼簿。'))
+    .catch(() => showMsg('globalMsg', 'error', '複製失敗，請手動選取文字後按 Ctrl+C。'));
+};
+
+$('resetBtn').onclick = () => {
+  if (!confirm('確定要重新開始？目前的分析結果和陳情信將會清除。')) return;
+  imageB64 = null; mediaType = null; analysis = null; rawDataUrl = null;
+  lastOcrText = ''; ocrBusy = false; serverOcr = null;
+  $('adText').value = '';
+  $('preview').style.display = 'none';
+  $('preview').src = '';
+  drop.classList.remove('has-file');
+  $('fileInfo').classList.add('hidden');
+  $('ocrBar').classList.add('hidden');
+  clearMsg('uploadError');
+  clearMsg('globalMsg');
+  $('resultCard').classList.add('hidden');
+  $('letterCard').classList.add('hidden');
+  $('previewCard').classList.add('hidden');
+  fileInput.value = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+</script>
+</body>
+</html>
