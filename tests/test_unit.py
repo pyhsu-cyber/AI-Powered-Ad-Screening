@@ -16,6 +16,11 @@ import os
 import base64
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# 主控台預設 cp950，輸出中文與 ≥ 等符號會讓整支測試 crash，先轉成 UTF-8
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 # ── pytest 相容但也支援直接執行 ────────────────────────────
 try:
     import pytest

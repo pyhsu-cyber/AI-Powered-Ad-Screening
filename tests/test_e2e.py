@@ -16,6 +16,11 @@ tests/test_e2e.py — E2E Tests（端對端）
 import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# 主控台預設 cp950，輸出中文與 ≥ 等符號會讓整支測試 crash，先轉成 UTF-8
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 import jsonschema
 from backend.app import app
 from backend.api_spec import (
@@ -233,7 +238,14 @@ r = client.get("/")
 check("GET / → 200", r.status_code == 200)
 check("GET / 回傳 HTML", "text/html" in r.content_type)
 html = r.get_data(as_text=True)
-check("頁面含 data-testid 屬性（v2 UI）", "data-testid" in html)
+# 瀏覽器端 E2E 以 id 選取元素，這裡守住 id 契約：
+# 任何一個被 build.py 改名，都會在這裡先報出來，而不是讓 puppeteer 莫名其妙掛掉。
+_REQUIRED_IDS = ["adText", "analyzeBtn", "resultCard", "vioList",
+                 "genBtn", "previewCard", "letterPreview",
+                 "fName", "fContact", "fPlatform", "fType",
+                 "file", "drop"]
+_missing = [i for i in _REQUIRED_IDS if 'id="%s"' % i not in html]
+check("頁面含 E2E 依賴的全部元素 id", not _missing, "缺少 " + ", ".join(_missing))
 
 # ══════════════════════════════════════════════════════════
 # 8. 回應欄位完整性逐一驗證
