@@ -77,6 +77,7 @@ const gKeyGet = () => (localStorage.getItem('gemini_key') || '').trim();
    直接開這個檔開發時，用的是下面這份預設值。 */
 const KEYWORD_SCOPE = { cosmetic_only: [], food_only: [] };
 const KEYWORD_EVIDENCE = { sources: [], map: {} };
+const PRE_APPROVAL = {};
 const LAWS = {
   'fsa-28-1': {law_name:'食品安全衛生管理法', article:'第28條第1項',
     summary:'食品、食品添加物、食品用洗潔劑及經中央主管機關公告之食品器具、容器或包裝，其標示、宣傳或廣告，不得有不實、誇張或易生誤解之情形。',
@@ -847,14 +848,30 @@ function renderResult(d, opts) {
   if (typeSel && typeSel.options && !opts.keepType &&
       [].some.call(typeSel.options, o => o.value === d.product_type)) typeSel.value = d.product_type;
 
+  preApprovalNotice(currentType());
   $('resultCard').classList.remove('hidden');
   $('letterCard').classList.remove('hidden');
   markStep(3);
   if (!opts.noScroll) $('resultCard').scrollIntoView({behavior:'smooth'});
 }
 
+/* 藥品與醫療器材是事前核准制，最常見的違規是「未經核准擅自刊播」。
+   那件事無法從廣告文字判斷，得查核准文號——使用者若以為篩過就沒問題，
+   等於被工具誤導，所以選到這兩類時要把邊界講清楚。 */
+function preApprovalNotice(pType) {
+  const pa = PRE_APPROVAL[pType];
+  if (!pa) { clearNotice('noticeStep3'); return; }
+  notify('noticeStep3',
+    pType + '廣告採事前核准制：依' + pa.law + '，' + pa.requirement + '。\n'
+    + '也就是說，這類廣告最常見的違規是「未經核准就刊播」——'
+    + '本工具只比對廣告文字，看不出有沒有核准文號。\n'
+    + '請自行確認廣告上是否載明核准文號；陳情信已代為請主管機關一併查明。',
+    'warn');
+}
+
 /* 換產品類別要即時換掉引用的法條 */
 $('fType').onchange = () => {
+  preApprovalNotice($('fType').value);
   if (analysis) renderResult(analysis, { noScroll: true, keepType: true });
 };
 
@@ -924,6 +941,8 @@ function buildLetter() {
     return `　（${i+1}）廣告宣稱：「${grp.line}」\n`
          + `　　　其中 ${words} 涉${kinds}。${reasonFor(lead, pType)}\n`
          + `　　　涉違反《${law.law_name}》${law.article}：「${law.summary}」\n`
+         // 承辦人要能一鍵查證條文，而不是自己去翻法規資料庫
+         + (law.url ? `　　　條文出處：${law.url}\n` : '')
          + `　　　罰則：${law.penalty}\n`
          + `　　　個別用語之依據：\n` + basisLines;
   }).join('\n\n');
@@ -969,6 +988,11 @@ function buildLetter() {
   const seller = g('fSeller');
   const adFull = String(analysis.ad_text || $('adText').value || '').trim();
 
+  const pa = PRE_APPROVAL[pType];
+  const paNote = pa
+    ? `\n\n　　另，${pType}廣告依${pa.law}規定，應於刊播前經主管機關核准並載明核准文號。`
+      + `檢舉人自廣告內容無從查證本件是否經核准，併請貴局一併查明有無未經核准擅自刊播之情事。`
+    : '';
   const letter = `受文者：${g('fOrg') || '（縣市）政府衛生局'}
 
 主旨：檢舉疑似違規之${typeWord}廣告「${pName}」，涉有誇大不實或宣稱醫療效能情事，請惠予查處。
@@ -983,7 +1007,7 @@ ${adFull ? adFull.split('\n').map(l => '　　' + l).join('\n') : '　　（詳�
 
 三、上開廣告經初步檢視，疑有下列違規情事：
 
-${vioText || '　（無）'}${suspectNote}
+${vioText || '　（無）'}${suspectNote}${paNote}
 
 四、上開廣告用語已逾越一般商業宣傳範圍，恐使消費者誤信產品具有醫療或誇大之效能，影響國民健康與消費權益，爰依相關法規檢舉，請貴局依法查處。
 
