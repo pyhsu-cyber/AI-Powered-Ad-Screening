@@ -75,9 +75,10 @@ const gKeyGet = () => (localStorage.getItem('gemini_key') || '').trim();
 /* @generated-from-regulations
    以下兩份資料由 build.py 從 ../regulations.json 自動產生並覆寫，請不要手改。
    直接開這個檔開發時，用的是下面這份預設值。 */
-const KEYWORD_SCOPE = { cosmetic_only: [], food_only: [] };
+const KEYWORD_SCOPE = { cosmetic_only: [], food_only: [], drug_only: [] };
 const KEYWORD_EVIDENCE = { sources: [], map: {} };
 const PRE_APPROVAL = {};
+const OUT_OF_SCOPE = {};
 const LAWS = {
   'fsa-28-1': {law_name:'食品安全衛生管理法', article:'第28條第1項',
     summary:'食品、食品添加物、食品用洗潔劑及經中央主管機關公告之食品器具、容器或包裝，其標示、宣傳或廣告，不得有不實、誇張或易生誤解之情形。',
@@ -151,9 +152,11 @@ function reasonFor(v, productType) {
 /* 關鍵字的品類維度：化粧品專屬的詞（漢方、療程、雷射）不該套到食品廣告上，
    反之亦然。沒選類別時不過濾——寧可多列也不要漏抓。 */
 const FOODISH = ['食品', '健康食品'];
+const DRUGGISH = ['藥品', '醫療器材'];
 function scopeOf(kw) {
   if (KEYWORD_SCOPE.cosmetic_only.indexOf(kw) >= 0) return '化粧品';
   if (KEYWORD_SCOPE.food_only.indexOf(kw) >= 0) return '食品';
+  if ((KEYWORD_SCOPE.drug_only || []).indexOf(kw) >= 0) return '藥物';
   return '';
 }
 function applicable(v, productType) {
@@ -161,9 +164,15 @@ function applicable(v, productType) {
   if (!sc) return true;                                    // 通用詞
   if (sc === '化粧品') return productType === '化粧品';
   if (sc === '食品') return FOODISH.indexOf(productType) >= 0;
+  // 藥物廣告專屬的禁止手法（藉報導宣傳、列舉服用對象、危言聳聽），
+  // 食品或化粧品這樣寫並不當然違規，套過去會誤判
+  if (sc === '藥物') return DRUGGISH.indexOf(productType) >= 0;
   return true;
 }
-/* 只有明確選了食品類或化粧品才過濾；藥品／醫材／其他／無法判定一律不過濾 */
+/* 只有明確選了食品類或化粧品才過濾。
+   藥品／醫材本身就能宣稱療效，違規點在核准與否，我們無從判斷哪些詞不適用，
+   所以維持不過濾、全部列出讓人工判斷——寧可多列也不要漏抓。
+   （食品／化粧品廣告仍會由 applicable() 濾掉藥物專屬的手法性詞句。） */
 function shouldFilter(productType) {
   return productType === '化粧品' || FOODISH.indexOf(productType) >= 0;
 }
@@ -434,8 +443,27 @@ function toHalfWidth(s) {
   return s.replace(/[０-９Ａ-Ｚａ-ｚ]/g,
                    c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
 }
+
+/* 規避手法與 OCR 雜訊的正規化。
+   食藥署115年食品廣告合規輔導指引已明文把「錯別字、諧音」列為可裁處態樣，
+   業者也確實會插入零寬字元把「治療」拆成「治<U+200B>療」來閃避字串比對。
+
+   這裡只收「在正常廣告文案中幾乎不可能出現」的字元，不做形近字猜測——
+   猜測會把合法的「使排便順暢」變成違規的「使小便順暢」，那是誣告。 */
+const NOISE_MAP = {
+  '丶': '、',   // 丶 OCR 常把頓號讀成這個
+  '囗': '口',   // 囗 圍字框，實務上不會出現在廣告文案
+  '､': '、',   // ｦ 半形頓號
+  '‧': '‧', '·': '‧',   // 各種間隔號統一
+};
+function denoise(s) {
+  return String(s || '')
+    // 零寬字元／控制字元：純粹用來規避比對，一律移除
+    .replace(/[​-‏‪-‮⁠-⁤﻿­]/g, '')
+    .replace(/[丶囗､‧·]/g, c => NOISE_MAP[c] || c);
+}
 function tidyCJK(s) {
-  return toHalfWidth(String(s || ''))
+  return toHalfWidth(denoise(s))
     .replace(/\r/g, '')
     .replace(/[ \t\u00a0]+/g, ' ')
     .replace(new RegExp('([' + CJK + ']) (?=[' + CJK + '0-9A-Za-z])', 'g'), '$1')
@@ -486,6 +514,7 @@ async function doOCR(auto, enhance) {
     };
     const worker = await getTessWorker();
     const pass1 = await worker.recognize(first);
+    lastOcrConfidence = pass1.data.confidence;   // 引擎自評的辨識信心（0~100）
     let text = tidyCJK(pass1.data.text);
 
     // 依實際量到的字高決定要不要放大。真實廣告截圖的字往往只有 10~15px，
@@ -681,6 +710,64 @@ $('analyzeBtn').onclick = async () => {
   }
 };
 
+let _bgToken = 0;
+function myTokenStale() { return _bgToken !== runToken; }
+
+/* 低於此信心值就提醒使用者辨識結果不可靠。
+   實測 tesseract 自評：清晰廣告圖 83~86、低解析小字 61、密集資訊圖表 44。
+   （先前用「多趟結果的字元集合重疊」當訊號，實測分不出來——
+     亂碼裡也有大量常用字，清晰圖 0.95 對亂碼圖 0.86，門檻無從設起。） */
+const UNSTABLE_OCR_CONF = 70;
+
+/* 這一行有沒有帶來目前還沒看到的違規關鍵字。
+   關鍵字表在 KEYWORD_EVIDENCE.map，前端本來就有整份。 */
+function newKeywordsIn(line, seenText) {
+  const map = (KEYWORD_EVIDENCE && KEYWORD_EVIDENCE.map) || {};
+  for (const kw in map) {
+    if (kw.length >= 2 && line.indexOf(kw) >= 0 && seenText.indexOf(kw) < 0) return true;
+  }
+  return false;
+}
+
+/* 把補讀的結果併進主要文字。
+   只併「帶來新關鍵字」的行——多趟補讀的目的就是補抓漏掉的違規詞，
+   沒帶來新詞的行對使用者只是雜訊。密集圖表每趟的誤認方式都不同，
+   全部併起來會塞進數十行亂碼，反而讓人無法核對 OCR 結果。 */
+function mergeOcrText(base, extra) {
+  let out = String(base || '').trim();
+  const added = [];
+  String(extra || '').split('\n').forEach(raw => {
+    const line = raw.trim();
+    if (line.replace(/\s/g, '').length < 2) return;
+    if (out.indexOf(line) >= 0) return;
+    if (!newKeywordsIn(line, out + '\n' + added.join('\n'))) return;
+    added.push(line);
+  });
+  return added.length ? (out + '\n' + added.join('\n')) : out;
+}
+
+/* 用不同前處理再讓 Windows OCR 讀一次。
+   實測：小圖放大能把 0 項變 2 項；大圖盲目放大反而更差，但加對比可以救回被吃掉的字。
+   沒有單一組合全贏，所以跑多趟取聯集——合法圖在所有變體下都是 0 項，不會製造誤判。 */
+let lastOcrConfidence = null;   // 瀏覽器 OCR 上一次的信心值
+async function serverOcrVariants(baseText) {
+  if (!rawDataUrl || standalone) return baseText;
+  const img = await loadImg(rawDataUrl);
+  const small = Math.min(img.naturalWidth, img.naturalHeight) < 700;
+  const passes = small ? [[2, false], [2, true]] : [[2, true]];
+  let merged = baseText;
+  for (const [scale, enhance] of passes) {
+    if (myTokenStale()) return merged;
+    try {
+      const dataUrl = prepare(img, scale, enhance);
+      const d = await postAnalyze(dataUrl.split(',')[1], 'image/png', '');
+      const got = tidyCJK(d.ad_text || '');
+      if (charCount(got) >= 4) merged = mergeOcrText(merged, got);
+    } catch (e) { /* 單一變體失敗不影響其他趟 */ }
+  }
+  return merged;
+}
+
 /* 分析完成後，背景再用瀏覽器 OCR 讀一次做交叉比對。
    Windows OCR 有時會把關鍵字吃掉（例如「改善心血管疾病」讀成「改」），
    兩套引擎互補可以把漏掉的違規補回來。 */
@@ -691,10 +778,17 @@ async function crossCheckWithBrowserOCR() {
   const ta = $('adText');
   if (!textIsMachine) return;                  // 使用者已經自己改過字，不要動
   const myToken = runToken;
+  _bgToken = runToken;
   const beforeText = ta.value.trim();
 
   const before = (analysis && analysis.violations || []).length;
   try {
+    // 先用不同前處理讓 Windows OCR 再讀幾趟——比下載瀏覽器辨識模型快得多
+    ocrMsg('背景補讀中：調整圖片後再辨識一次…', true);
+    const widened = await serverOcrVariants(ta.value);
+    if (myToken !== runToken || !textIsMachine) return;
+    if (widened !== ta.value) { ta.value = widened; lastOcrText = widened; }
+
     ocrMsg('背景交叉比對中：用瀏覽器 OCR 再讀一次，避免漏字…', true);
     await runOCR(false);
     if (myToken !== runToken || !textIsMachine) return;   // 換過圖、或使用者中途改了字
@@ -708,9 +802,22 @@ async function crossCheckWithBrowserOCR() {
       // L3：信已經生成了就一起更新，不要讓畫面與產出物不一致
       const letterShown = !$('previewCard').classList.contains('hidden');
       if (letterShown) buildLetter();
-      notify('noticeStep1', '交叉比對完成：瀏覽器 OCR 又補抓到 ' + (after - before)
+      notify('noticeStep1', '交叉比對完成：又補抓到 ' + (after - before)
            + ' 項違規（合計 ' + after + ' 項），上方結果已更新'
            + (letterShown ? '，下方陳情信也已重新生成。' : '。'), 'ok', 9000);
+    }
+    // 辨識本身不可靠時，這件事比「補抓到幾項」重要，放最後發以免被蓋掉
+    if (lastOcrConfidence !== null && lastOcrConfidence < UNSTABLE_OCR_CONF) {
+      notify('noticeStep1',
+        '這張圖的文字辨識不可靠（辨識信心 ' + Math.round(lastOcrConfidence) + '%，'
+        + '一般清晰的廣告圖在 80% 以上）。圖上的字太小或太密，'
+        + '下方「廣告文字」很可能有大量錯字。\n'
+        + '建議改用這些方式取得正確文字：\n'
+        + '一、用 Win + Shift + S 截圖後，在跳出的「剪取工具」視窗點「文字動作」複製文字。\n'
+        + '二、把原圖放大、或改截解析度較高的版本再上傳。\n'
+        + '三、直接把廣告文案貼到「廣告文字」欄位。\n'
+        + '★ 陳情信會引述這段文字當作違規事證，請務必核對後再送件。',
+        'warn');
     }
   } catch (e) {
     ocrMsg('（背景交叉比對未完成：' + e.message + '，不影響上方結果）');
@@ -849,10 +956,38 @@ function renderResult(d, opts) {
       [].some.call(typeSel.options, o => o.value === d.product_type)) typeSel.value = d.product_type;
 
   preApprovalNotice(currentType());
+  outOfScopeNotice($('adText').value);
   $('resultCard').classList.remove('hidden');
   $('letterCard').classList.remove('hidden');
   markStep(3);
   if (!opts.noScroll) $('resultCard').scrollIntoView({behavior:'smooth'});
+}
+
+/* 偵測廣告是否根本不屬本工具涵蓋的 6 部法規。
+   寵物食品歸農業部依動物保護法（罰3萬~15萬）、電子煙歸菸害防制法——
+   用本工具的信會引到食安法、寫錯罰則級距、還送錯機關。
+   引錯法條比漏抓嚴重得多，所以偵測到就要明確擋下。 */
+function outOfScopeHit(text) {
+  const t = String(text || '');
+  for (const name in OUT_OF_SCOPE) {
+    if (name.charAt(0) === '_') continue;
+    const c = OUT_OF_SCOPE[name];
+    const hit = (c.indicators || []).filter(w => t.indexOf(w) >= 0);
+    if (hit.length) return { name: name, cfg: c, words: hit };
+  }
+  return null;
+}
+
+function outOfScopeNotice(text) {
+  const r = outOfScopeHit(text);
+  if (!r) { clearNotice('noticeStep4'); return null; }
+  notify('noticeStep4',
+    '這則廣告出現「' + r.words.join('」「') + '」，可能屬於「' + r.name + '」。\n'
+    + r.name + '不適用本工具引用的法條——應依《' + r.cfg.law + '》，'
+    + '主管機關為' + r.cfg.authority + '，' + r.cfg.penalty + '。\n'
+    + '請勿直接使用本工具產出的陳情信送件，否則會引到錯誤的法條與罰則級距。',
+    'err');
+  return r;
 }
 
 /* 藥品與醫療器材是事前核准制，最常見的違規是「未經核准擅自刊播」。
@@ -993,6 +1128,15 @@ function buildLetter() {
     ? `\n\n　　另，${pType}廣告依${pa.law}規定，應於刊播前經主管機關核准並載明核准文號。`
       + `檢舉人自廣告內容無從查證本件是否經核准，併請貴局一併查明有無未經核准擅自刊播之情事。`
     : '';
+
+  // 使用者可能忽略畫面上的提示直接列印，信裡也要帶警語
+  const oos = outOfScopeHit(adFull);
+  const oosNote = oos
+    ? `\n\n　　※※ 注意：本件廣告出現「${oos.words.join('」「')}」，可能屬於「${oos.name}」，`
+      + `不適用本件所引法條。${oos.name}應依《${oos.cfg.law}》辦理，`
+      + `主管機關為${oos.cfg.authority}。送件前請先確認產品類別，`
+      + `或改向該主管機關陳情。 ※※`
+    : '';
   const letter = `受文者：${g('fOrg') || '（縣市）政府衛生局'}
 
 主旨：檢舉疑似違規之${typeWord}廣告「${pName}」，涉有誇大不實或宣稱醫療效能情事，請惠予查處。
@@ -1007,7 +1151,7 @@ ${adFull ? adFull.split('\n').map(l => '　　' + l).join('\n') : '　　（詳�
 
 三、上開廣告經初步檢視，疑有下列違規情事：
 
-${vioText || '　（無）'}${suspectNote}${paNote}
+${vioText || '　（無）'}${suspectNote}${paNote}${oosNote}
 
 四、上開廣告用語已逾越一般商業宣傳範圍，恐使消費者誤信產品具有醫療或誇大之效能，影響國民健康與消費權益，爰依相關法規檢舉，請貴局依法查處。
 

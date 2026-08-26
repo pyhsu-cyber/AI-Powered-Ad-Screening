@@ -35,13 +35,17 @@ block = ('/* @generated-from-regulations\n'
          '   本區塊由 build.py 從 ../regulations.json 自動產生，請不要手改。 */\n'
          'const KEYWORD_SCOPE = ' + json.dumps(
              {'cosmetic_only': scope.get('cosmetic_only', []),
-              'food_only': scope.get('food_only', [])},
+              'food_only': scope.get('food_only', []),
+              'drug_only': scope.get('drug_only', [])},
              ensure_ascii=False, indent=2) + ';\n'
          'const KEYWORD_EVIDENCE = ' + json.dumps(
              {'sources': ev.get('sources', []), 'map': ev.get('map', {})},
              ensure_ascii=False, separators=(',', ':')) + ';\n'
          'const PRE_APPROVAL = ' + json.dumps(
              {k: v for k, v in reg.get('pre_approval', {}).items()
+              if not k.startswith('_')}, ensure_ascii=False, indent=2) + ';\n'
+         'const OUT_OF_SCOPE = ' + json.dumps(
+             {k: v for k, v in reg.get('out_of_scope', {}).items()
               if not k.startswith('_')}, ensure_ascii=False, indent=2) + ';\n'
          'const LAWS = ' + json.dumps(laws, ensure_ascii=False, indent=2) + ';\n'
          '/* @end-generated */')
@@ -51,11 +55,14 @@ if nb != 1:
     raise SystemExit('建置失敗：app.js 裡找不到 @generated-from-regulations 區塊 (%d)' % nb)
 evm = ev.get('map', {})
 lv = {k: sum(1 for x in evm.values() if x[0] == k) for k in 'coi'}
-print('  已注入 %d 條法條、化粧品專屬 %d 詞、食品專屬 %d 詞'
-      % (len(laws), len(scope.get('cosmetic_only', [])), len(scope.get('food_only', []))))
+print('  已注入 %d 條法條、化粧品專屬 %d 詞、食品專屬 %d 詞、藥物專屬 %d 詞'
+      % (len(laws), len(scope.get('cosmetic_only', [])),
+         len(scope.get('food_only', [])), len(scope.get('drug_only', []))))
 print('  證據等級：裁處案例 %d、法規明文 %d、推論（疑似）%d' % (lv['c'], lv['o'], lv['i']))
 print('  事前核准制品類：%s'
       % '、'.join(k for k in reg.get('pre_approval', {}) if not k.startswith('_')))
+print('  法域外品類：%s'
+      % '、'.join(k for k in reg.get('out_of_scope', {}) if not k.startswith('_')))
 
 out, n2 = re.subn(r'<script src="app\.js"></script>',
                   lambda m: '<script>\n' + js.rstrip() + '\n</script>', out)
