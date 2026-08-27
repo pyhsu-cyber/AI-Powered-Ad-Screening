@@ -112,6 +112,8 @@
   #spinner{display:none;text-align:center;color:var(--muted);padding:16px;font-size:.87rem}
   .hidden{display:none}
   footer{text-align:center;color:var(--dim);font-size:.74rem;padding:24px}
+  /* 版號要看得到 —— 使用者回報問題時說不出自己在跑哪一版，就無從重現 */
+  footer .ver{display:inline-block;margin-top:6px;opacity:.75;letter-spacing:.05em}
 
   /* ---------- OCR 狀態列 / 進階設定 ---------- */
   .ocrbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:13px;padding:10px 14px;
