@@ -15,14 +15,16 @@ app.config["TESTING"] = True
 client = app.test_client()
 
 passed = 0
+failed = 0
 
 def check(label, cond, info=""):
-    global passed
+    global passed, failed
     if cond:
         print(f"  PASS  {label}")
         passed += 1
     else:
         print(f"  FAIL  {label}" + (f": {info}" if info else ""))
+        failed += 1
 
 # ── 1. GET /api/status ────────────────────────────────────
 r = client.get("/api/status")
@@ -86,4 +88,21 @@ check("analyzer risk_level 正確", result.risk_level.value in ("高", "中"),
 r = client.get("/")
 check("GET / 回傳 200", r.status_code == 200)
 
-print(f"\nOK: {passed} 項測試全數通過")
+print(f"\n{'OK' if not failed else 'FAIL'}: {passed} 項測試通過"
+      + (f"、{failed} 項失敗" if failed else "、全數通過"))
+# 直接執行時用結束碼回報失敗。pytest 下不能 exit —— 那會變成 collection
+# error 而不是一筆乾淨的測試失敗，下面的 test_all_checks_passed 會接手。
+if failed and "pytest" not in sys.modules:
+    sys.exit(1)
+
+
+# ══════════════════════════════════════════════════════════
+# pytest 進入點
+# ══════════════════════════════════════════════════════════
+# 這支檔案的測試邏輯寫在模組層，可以直接 `python <本檔>` 執行。
+# 但 pytest 只 import 模組、不會把模組層的斷言當成 test item ——
+# 補上這個函式之前，`python -m pytest backend tests` 回報的是
+# "no tests ran"（exit 5），等於 README 記載的驗證指令什麼都沒驗。
+def test_all_checks_passed():
+    """模組層的檢查在 import 時已跑完，這裡把失敗數斷言出來。"""
+    assert failed == 0, f"{failed} 項檢查失敗（詳見上方 FAIL 行）"

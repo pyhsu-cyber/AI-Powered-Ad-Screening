@@ -273,5 +273,19 @@ if data.get("violations"):
 # ══════════════════════════════════════════════════════════
 print(f"\n{'='*50}")
 print(f"E2E Test 結果：{_passed} 通過 / {_failed} 失敗")
-if _failed:
+# 直接執行時用結束碼回報失敗。pytest 下不能 exit —— 那會變成 collection
+# error 而不是一筆乾淨的測試失敗，下面的 test_all_checks_passed 會接手。
+if _failed and "pytest" not in sys.modules:
     sys.exit(1)
+
+
+# ══════════════════════════════════════════════════════════
+# pytest 進入點
+# ══════════════════════════════════════════════════════════
+# 這支檔案的測試邏輯寫在模組層，可以直接 `python <本檔>` 執行。
+# 但 pytest 只 import 模組、不會把模組層的斷言當成 test item ——
+# 補上這個函式之前，`python -m pytest backend tests` 回報的是
+# "no tests ran"（exit 5），等於 README 記載的驗證指令什麼都沒驗。
+def test_all_checks_passed():
+    """模組層的檢查在 import 時已跑完，這裡把失敗數斷言出來。"""
+    assert _failed == 0, f"{_failed} 項檢查失敗（詳見上方 FAIL 行）"

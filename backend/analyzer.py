@@ -60,6 +60,19 @@ def _get_keywords() -> Dict[str, List[str]]:
     return data.get("demo_keywords", {})
 
 
+def _get_context_guard() -> Dict[str, List[str]]:
+    """回傳 {正規化關鍵字: [正規化排除語境片語]}，由 context_exclusions 展開。"""
+    ce = _load_regulations().get("context_exclusions", {})
+    groups = ce.get("groups", {})
+    guard: Dict[str, List[str]] = {}
+    for rule in ce.get("rules", []):
+        ctx = rule.get("context") or groups.get(rule.get("group", ""), [])
+        norm_ctx = [_normalize(c) for c in ctx]
+        for kw in rule.get("keywords", []):
+            guard.setdefault(_normalize(kw), []).extend(norm_ctx)
+    return guard
+
+
 # ── 文字正規化 ─────────────────────────────────────────────
 
 _HALF_FULL_TABLE = str.maketrans(
@@ -133,8 +146,11 @@ def _find_violations(text: str, law_map: Dict[str, LawReference]) -> List[Violat
         for kw in kw_list:
             norm_kw = _normalize(kw)
             if norm_kw in norm_text:
-                # 找到原始文字中的實際匹配位置（還原展示用引用）
-                quote = _find_original_quote(text, kw)
+                # quote 必須與關鍵字逐字相同。前端以 quote 為鍵查 KEYWORD_SCOPE
+                # 與 KEYWORD_EVIDENCE，回傳原文片段會查不到表 —— 品類過濾與證據
+                # 等級會整組失效（fallback 成 i 級、來源印空白），陳情信的逐字
+                # 引用也會印出位移後的錯字。前端 analyzeLocal() 同樣是寫 quote: kw。
+                quote = kw
                 if quote in seen_quotes:
                     continue
                 seen_quotes.add(quote)
@@ -151,35 +167,103 @@ def _find_violations(text: str, law_map: Dict[str, LawReference]) -> List[Violat
     return violations
 
 
-def _find_original_quote(text: str, keyword: str) -> str:
+
+# 斷句只用句末標點與換行。逗號與頓號刻意不斷句 ——
+# 「高血壓、高血脂患者請依醫囑控制飲食。」如果在頓號斷開，
+# 前半段就只剩「高血壓」而看不到後面的警語片語。
+_SENTENCE_SPLIT = re.compile(r"[。！？；.!?;\n\r]+")
+
+
+def _absorbed(sent: str, kw: str, ctx: List[str]) -> bool:
+    """句中每一次 kw 出現，都被某個「含 kw 的良性長詞」完整吃掉。
+
+    這種情形不需要再看同句有沒有別的違規 —— 「再生紙材」裡的「再生」、
+    「耐磨損」裡的「磨損」、「超高溫殺菌」裡的「殺菌」，那個命中本身就只是
+    長詞的一部分，跟句子其他地方寫了什麼無關。
     """
-    在原始文字中找出含關鍵字的最短句子片段（不超過 40 字）。
-    找不到就直接回傳關鍵字本身。
+    longer = [c for c in ctx if kw in c and c != kw]
+    if not longer:
+        return False
+    spans = []
+    for c in longer:
+        i = sent.find(c)
+        while i != -1:
+            spans.append((i, i + len(c)))
+            i = sent.find(c, i + 1)
+    if not spans:
+        return False
+    i = sent.find(kw)
+    while i != -1:
+        if not any(a <= i and i + len(kw) <= b for a, b in spans):
+            return False
+        i = sent.find(kw, i + 1)
+    return True
+
+
+def _apply_context_guard(text: str, violations: List[Violation]) -> List[Violation]:
     """
-    norm_text = _normalize(text)
-    norm_kw   = _normalize(keyword)
-    idx = norm_text.find(norm_kw)
-    if idx == -1:
-        return keyword
+    法定警語與良性語境排除（詳見 regulations.json 的 context_exclusions._note）。
 
-    # 往前找句子起點（標點或換行）
-    start = idx
-    for sep in "，。！？、\n":
-        pos = norm_text.rfind(sep, 0, idx)
-        if pos != -1:
-            start = max(start, pos + 1)
+    兩種排除方式：
+      吸收型 —— 命中只是某個良性長詞的一部分（再生紙、耐磨損、超高溫殺菌），
+                 無條件排除。
+      語境型 —— 同句出現警語片語（請諮詢醫師、依醫囑）才排除，且同句不能另有
+                 「無法被語境排除」的違規命中。後面這個條件不能省：「三個月改善
+                 高血壓，請諮詢醫師」不該因為有警語就整句放過。反過來，
+                 「高血壓、高血脂患者請依醫囑控制飲食」裡兩個病名互為彼此的
+                 「其他命中」，所以判斷時要先看對方是否本身就可被排除。
 
-    # 往後找句子終點
-    end = idx + len(norm_kw)
-    for sep in "，。！？、\n":
-        pos = norm_text.find(sep, idx + len(norm_kw))
-        if pos != -1:
-            end = min(end, pos)
-            break
+    另外，關鍵字出現的「每一個」句子都要落在排除語境裡才排除；任一句是乾淨的
+    違規宣稱就保留。
+    """
+    guard = _get_context_guard()
+    if not guard:
+        return violations
 
-    # 對應回原始文字（norm 與 original 長度相同，因為只做替換不增刪）
-    fragment = text[start:end].strip()
-    return fragment[:40] if len(fragment) > 40 else fragment or keyword
+    ce = _load_regulations().get("context_exclusions", {})
+    blockers = [_normalize(b) for b in ce.get("claim_blockers", [])]
+
+    sentences = [s for s in _SENTENCE_SPLIT.split(_normalize(text)) if s]
+    pairs = [(v, _normalize(v.quote)) for v in violations]
+
+    def suppressible(sent: str, kw: str) -> bool:
+        ctx = guard.get(kw)
+        if not ctx:
+            return False
+        if _absorbed(sent, kw, ctx):
+            return True
+        if any(b in sent for b in blockers):
+            return False
+        return any(c in sent for c in ctx)
+
+    kept: List[Violation] = []
+    for v, norm_kw in pairs:
+        ctx = guard.get(norm_kw)
+        if not ctx:
+            kept.append(v)
+            continue
+
+        hosts = [s for s in sentences if norm_kw in s]
+
+        def is_benign(sent: str) -> bool:
+            if _absorbed(sent, norm_kw, ctx):
+                return True
+            # 同句出現療效動詞 → 這不是警語或製程敘述，是拿警語當擋箭牌
+            if any(b in sent for b in blockers):
+                return False
+            if not any(c in sent for c in ctx):
+                return False
+            return not any(
+                other_kw in sent and not suppressible(sent, other_kw)
+                for other, other_kw in pairs
+                if other is not v and other_kw != norm_kw
+            )
+
+        if hosts and all(is_benign(s) for s in hosts):
+            continue
+        kept.append(v)
+
+    return kept
 
 
 def _make_reason(keyword: str, vtype: ViolationType) -> str:
@@ -232,7 +316,7 @@ def analyze_text(text: str) -> AnalyzeResponse:
     AnalyzeResponse
     """
     law_map    = _get_law_map()
-    violations = _find_violations(text, law_map)
+    violations = _apply_context_guard(text, _find_violations(text, law_map))
     risk       = _calc_risk(violations)
     ptype      = _infer_product_type(text)
     pname      = _extract_product_name(text)

@@ -230,9 +230,12 @@ status_limiter = RateLimiter(max_calls=60, window_seconds=60)
 # ══════════════════════════════════════════════════════════
 
 # 這些欄位的值在 log / 回應中會被遮蔽
+# 查找一律用 k.lower()，所以這裡的鍵必須全部小寫 ——
+# 曾經寫成 "fName" / "fContact"（前端真實欄位名），結果檢舉人姓名與
+# 聯絡方式從來沒有被遮蔽過。
 _SENSITIVE_FIELDS = frozenset({
     "api_key", "image_base64", "complainant_name",
-    "complainant_contact", "fName", "fContact",
+    "complainant_contact", "fname", "fcontact",
 })
 
 # 可能含個資的 Header

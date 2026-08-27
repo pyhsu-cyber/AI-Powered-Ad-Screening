@@ -184,12 +184,17 @@ function dedupeNested(vios) {
     o !== v && o.quote.length > v.quote.length && o.quote.indexOf(v.quote) >= 0));
 }
 
+/* 順序很重要：必須先過濾品類、再去重巢狀。
+   顛倒過來時，「短詞通用、長詞品類專屬」的組合會兩步各砍掉一個而變成 0 命中——
+   例如選「食品」的廣告寫「三週消除橘皮組織」：長詞「消除橘皮組織」是化粧品專屬、
+   會被 applicable() 濾掉，而通用短詞「橘皮組織」早在 dedupeNested() 就被當成
+   已被長詞涵蓋而刪除。實測這樣確定漏抓 10 組（消除法令紋、消除魚尾紋、
+   修復受損肌膚、減少孕斑…，以及化粧品類的「根除糖尿病」）。 */
 function splitByScope(vios, productType) {
-  vios = dedupeNested(vios);
-  if (!shouldFilter(productType)) return { keep: vios, drop: [] };
+  if (!shouldFilter(productType)) return { keep: dedupeNested(vios), drop: [] };
   const keep = [], drop = [];
   vios.forEach(v => (applicable(v, productType) ? keep : drop).push(v));
-  return { keep: keep, drop: drop };
+  return { keep: dedupeNested(keep), drop: dedupeNested(drop) };
 }
 
 /* 關鍵字的證據等級：
@@ -247,6 +252,66 @@ fetch('/api/status')
 /* 純瀏覽器模式的比對引擎。對應 exe 示範模式的行為，但多做兩件事：
    產品名稱取 OCR 第一行（exe 一律回「示範模式無法辨識」）、
    風險等級依嚴重度分級（exe 一律回「中」）。 */
+/* 語境排除。這些關鍵字確實是主管機關例示或有裁處案例的違規用語，不能刪
+   （「糖尿病」全庫只有一個組合詞，拔掉裸詞等於放棄整個病名的召回），但在法定
+   警語與加工製程敘述裡出現時並非違規宣稱，硬判下去就是誣告。
+   兩種排除方式：
+     吸收型 —— 命中只是良性長詞的一部分（再生紙裡的「再生」、耐磨損裡的
+                「磨損」、超高溫殺菌裡的「殺菌」），無條件排除。
+     語境型 —— 同句有警語片語才排除，且同句不能有療效動詞、也不能有其他
+                「無法被語境排除」的違規命中。
+   後端 backend/analyzer.py 的 _apply_context_guard 是同一套邏輯，兩邊要一起改。 */
+const SENT_SPLIT = /[。！？；.!?;\n\r]+/;
+function ctxGuardTable() {
+  const ce = (typeof CONTEXT_EXCLUSIONS !== 'undefined' && CONTEXT_EXCLUSIONS) || {};
+  const groups = ce.groups || {}, guard = {};
+  (ce.rules || []).forEach(r => {
+    const ctx = (r.context && r.context.length) ? r.context : (groups[r.group] || []);
+    (r.keywords || []).forEach(kw => { guard[kw] = (guard[kw] || []).concat(ctx); });
+  });
+  return guard;
+}
+function absorbedBy(sent, kw, ctx) {
+  const longer = ctx.filter(c => c !== kw && c.indexOf(kw) >= 0);
+  if (!longer.length) return false;
+  const spans = [];
+  longer.forEach(c => {
+    for (let i = sent.indexOf(c); i >= 0; i = sent.indexOf(c, i + 1)) spans.push([i, i + c.length]);
+  });
+  if (!spans.length) return false;
+  for (let i = sent.indexOf(kw); i >= 0; i = sent.indexOf(kw, i + 1))
+    if (!spans.some(s => s[0] <= i && i + kw.length <= s[1])) return false;
+  return true;
+}
+function applyContextGuard(text, vios) {
+  const guard = ctxGuardTable();
+  if (!Object.keys(guard).length) return vios;
+  const ce = (typeof CONTEXT_EXCLUSIONS !== 'undefined' && CONTEXT_EXCLUSIONS) || {};
+  const blockers = ce.claim_blockers || [];
+  const sents = String(text || '').split(SENT_SPLIT).filter(s => s);
+  const blocked = sent => blockers.some(b => sent.indexOf(b) >= 0);
+  const suppressible = (sent, kw) => {
+    const ctx = guard[kw];
+    if (!ctx) return false;
+    if (absorbedBy(sent, kw, ctx)) return true;
+    if (blocked(sent)) return false;
+    return ctx.some(c => sent.indexOf(c) >= 0);
+  };
+  return vios.filter(v => {
+    const kw = v.quote, ctx = guard[kw];
+    if (!ctx) return true;
+    const hosts = sents.filter(s => s.indexOf(kw) >= 0);
+    if (!hosts.length) return true;
+    return !hosts.every(sent => {
+      if (absorbedBy(sent, kw, ctx)) return true;
+      if (blocked(sent)) return false;
+      if (!ctx.some(c => sent.indexOf(c) >= 0)) return false;
+      return !vios.some(o => o !== v && o.quote !== kw
+        && sent.indexOf(o.quote) >= 0 && !suppressible(sent, o.quote));
+    });
+  });
+}
+
 function analyzeLocal(text) {
   if (!REGS) throw new Error('法規資料庫尚未載入完成，請稍候再試。');
   const dk = REGS.demo_keywords || {};
@@ -265,14 +330,15 @@ function analyzeLocal(text) {
     if (text.indexOf(kw) >= 0)
       add(kw, '誇大不實', 'fsa-28-1', '「' + kw + '」屬誇大或易生誤解之用語。');
   });
+  const kept = applyContextGuard(text, vios);
   return {
     mode: 'standalone',
     product_name: guessProductName(text) || '（未標示）',
     product_type: '無法判定',
     ad_text: text,
-    violations: vios,
-    risk_level: calcRisk(vios),
-    overall_assessment: summarize(vios)
+    violations: kept,
+    risk_level: calcRisk(kept),
+    overall_assessment: summarize(kept)
   };
 }
 
@@ -917,11 +983,11 @@ function renderResult(d, opts) {
   $('rSummary').textContent = isDemo ? summarize(scoped) : d.overall_assessment;
   const list = $('vioList');
   list.innerHTML = '';
-  if (!splitByScope(d.violations || [], currentType()).keep.length)
-    list.innerHTML = '<p style="color:var(--ok)">未偵測到明顯違規字句。</p>';
   const pType = currentType();
   const split = splitByScope(d.violations || [], pType);
   const shown = split.keep;
+  if (!shown.length)
+    list.innerHTML = '<p style="color:var(--ok)">未偵測到明顯違規字句。</p>';
   d._shown = shown;                       // 陳情信要用同一份
   if (split.drop.length) {
     notify('noticeStep1', '已依產品類別「' + pType + '」排除 ' + split.drop.length + ' 項不適用的用語（'

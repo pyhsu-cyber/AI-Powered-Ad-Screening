@@ -139,7 +139,83 @@ vague = [l['id'] for l in reg['laws']
          if '請以主管機關' in l.get('penalty', '') or not l.get('penalty', '').strip()]
 check("罰則皆已查明（無「請以主管機關為準」佔位）", not vague, str(vague))
 
+print()
+print("── 語境排除：法定警語與良性語境不得誤判 ──")
+# 這些關鍵字（病名裸詞、殺菌、再生、磨損、雷射）確實是主管機關例示或有裁處
+# 案例的違規用語，不能刪掉 —— 「糖尿病」全庫只有一個組合詞，拔掉裸詞等於放棄
+# 整個病名的召回。但它們出現在法定警語與加工製程敘述裡時並非違規宣稱，
+# 由 regulations.json 的 context_exclusions 負責排除。
+from backend.analyzer import analyze_text, reload_regulations
+reload_regulations()
+
+BENIGN = [
+    "糖尿病患者、孕婦及嬰幼兒食用前請諮詢醫師。",
+    "高血壓、高血脂患者請依醫囑控制飲食。",
+    "氣喘、心律不整患者請先諮詢醫師後再服用。",
+    "痔瘡患者不宜食用。",
+    "乳糖不耐症者請勿食用。",
+    "偏頭痛患者請遵醫囑。",
+    "本產品經135℃超高溫殺菌，無菌充填，開封前無需冷藏。",
+    "採巴斯德殺菌法製造。",
+    "外盒採用100%再生紙材。",
+    "本器材採不鏽鋼刀頭，耐磨損不易鈍化。",
+    "本品外包裝以雷射雕刻防偽標籤。",
+]
+for _text in BENIGN:
+    _hits = [v.quote for v in analyze_text(_text).violations]
+    check(f"良性語境無誤判：{_text[:22]}", not _hits, f"誤判 {_hits}")
+
+print()
+print("── 語境排除不得變成規避漏洞 ──")
+STILL_VIOLATING = [
+    ("本品可根治糖尿病，糖尿病患者請諮詢醫師。", "同句另有療效宣稱"),
+    ("三個月改善高血壓，請諮詢醫師。", "警語當擋箭牌"),
+    ("有效緩解咳嗽，請依醫囑服用。", "警語當擋箭牌"),
+    ("擺脫偏頭痛困擾，孕婦請諮詢醫師。", "警語當擋箭牌"),
+    ("糖尿病患者請諮詢醫師。本品可治療糖尿病。", "另一句是乾淨的違規"),
+    ("殺菌消炎，體內環保。", "非製程語境"),
+    ("促進細胞再生，肌膚再生。", "非包材語境"),
+    ("媲美雷射的除斑效果。", "非防偽語境"),
+    ("改善關節磨損疼痛。", "非耐用性語境"),
+]
+for _text, _why in STILL_VIOLATING:
+    _hits = [v.quote for v in analyze_text(_text).violations]
+    check(f"仍應命中（{_why}）：{_text[:22]}", bool(_hits), "被語境排除吃掉了")
+
+print()
+print("── 語境排除規則結構完整性 ──")
+_ce = reg.get("context_exclusions", {})
+check("context_exclusions 存在且有規則", bool(_ce.get("rules")))
+_bad_kw = [k for r in _ce.get("rules", []) for k in r.get("keywords", []) if k not in ALL]
+check("規則引用的關鍵字都存在於關鍵字表", not _bad_kw, str(_bad_kw))
+_bad_grp = [r.get("group") for r in _ce.get("rules", [])
+            if not r.get("context") and r.get("group") not in _ce.get("groups", {})]
+check("規則引用的語境群組都存在", not _bad_grp, str(_bad_grp))
+_empty = [r.get("keywords") for r in _ce.get("rules", [])
+          if not (r.get("context") or _ce.get("groups", {}).get(r.get("group"), []))]
+check("每條規則都有排除語境", not _empty, str(_empty))
+_blk = _ce.get("claim_blockers", [])
+check("療效動詞否決清單非空", bool(_blk), str(len(_blk)))
+# 「控制」會出現在「請依醫囑控制飲食」、「有效」會出現在「有效期限」，
+# 收進否決清單會讓警語排除整個失效
+_risky = [b for b in _blk if b in ("控制", "有效", "注意", "建議", "期限")]
+check("否決清單未收會出現在警語裡的詞", not _risky, str(_risky))
+
 print(f"\n{'='*50}")
 print(f"白名單測試結果：{_passed} 通過 / {_failed} 失敗")
-if _failed:
+# 直接執行時用結束碼回報失敗。pytest 下不能 exit —— 那會變成 collection
+# error 而不是一筆乾淨的測試失敗，下面的 test_all_checks_passed 會接手。
+if _failed and "pytest" not in sys.modules:
     sys.exit(1)
+
+
+# ══════════════════════════════════════════════════════════
+# pytest 進入點
+# ══════════════════════════════════════════════════════════
+# 這支檔案的測試邏輯寫在模組層，可以直接 `python <本檔>` 執行。
+# 但 pytest 只 import 模組、不會把模組層的斷言當成 test item ——
+# 補上這個函式之前，`python -m pytest backend tests` 回報的是
+# "no tests ran"（exit 5），等於 README 記載的驗證指令什麼都沒驗。
+def test_all_checks_passed():
+    """模組層的檢查在 import 時已跑完，這裡把失敗數斷言出來。"""
+    assert _failed == 0, f"{_failed} 項檢查失敗（詳見上方 FAIL 行）"

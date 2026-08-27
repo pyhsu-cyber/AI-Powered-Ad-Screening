@@ -47,6 +47,9 @@ block = ('/* @generated-from-regulations\n'
          'const OUT_OF_SCOPE = ' + json.dumps(
              {k: v for k, v in reg.get('out_of_scope', {}).items()
               if not k.startswith('_')}, ensure_ascii=False, indent=2) + ';\n'
+         'const CONTEXT_EXCLUSIONS = ' + json.dumps(
+             {k: v for k, v in reg.get('context_exclusions', {}).items()
+              if not k.startswith('_')}, ensure_ascii=False, indent=2) + ';\n'
          'const LAWS = ' + json.dumps(laws, ensure_ascii=False, indent=2) + ';\n'
          '/* @end-generated */')
 js, nb = re.subn(r'/\* @generated-from-regulations.*?/\* @end-generated \*/',
@@ -63,6 +66,11 @@ print('  事前核准制品類：%s'
       % '、'.join(k for k in reg.get('pre_approval', {}) if not k.startswith('_')))
 print('  法域外品類：%s'
       % '、'.join(k for k in reg.get('out_of_scope', {}) if not k.startswith('_')))
+_ce = reg.get('context_exclusions', {})
+print('  語境排除：%d 條規則、%d 個關鍵字、%d 個療效動詞否決詞'
+      % (len(_ce.get('rules', [])),
+         sum(len(r.get('keywords', [])) for r in _ce.get('rules', [])),
+         len(_ce.get('claim_blockers', []))))
 
 out, n2 = re.subn(r'<script src="app\.js"></script>',
                   lambda m: '<script>\n' + js.rstrip() + '\n</script>', out)

@@ -20,15 +20,17 @@ from backend.fixtures import (
 )
 
 passed = 0
+failed = 0
 
 def check(label, schema, data):
-    global passed
+    global passed, failed
     try:
         jsonschema.validate(instance=data, schema=schema)
         print(f"  PASS  {label}")
         passed += 1
     except jsonschema.ValidationError as e:
         print(f"  FAIL  {label}: {e.message}")
+        failed += 1
 
 # 1. 範例請求符合 schema（只驗證 text 欄位，image 部分為 null）
 req = {k: v for k, v in EXAMPLE_ANALYZE_REQUEST.items() if v is not None}
@@ -64,4 +66,21 @@ for name, ep in ENDPOINTS.items():
 print(f"  PASS  所有 {len(ENDPOINTS)} 個 Endpoint 結構完整")
 passed += 1
 
-print(f"\nOK: {passed}/9 項驗證通過")
+print(f"\n{'OK' if not failed else 'FAIL'}: {passed} 項驗證通過"
+      + (f"、{failed} 項失敗" if failed else "、全數通過"))
+# 直接執行時用結束碼回報失敗。pytest 下不能 exit —— 那會變成 collection
+# error 而不是一筆乾淨的測試失敗，下面的 test_all_checks_passed 會接手。
+if failed and "pytest" not in sys.modules:
+    sys.exit(1)
+
+
+# ══════════════════════════════════════════════════════════
+# pytest 進入點
+# ══════════════════════════════════════════════════════════
+# 這支檔案的測試邏輯寫在模組層，可以直接 `python <本檔>` 執行。
+# 但 pytest 只 import 模組、不會把模組層的斷言當成 test item ——
+# 補上這個函式之前，`python -m pytest backend tests` 回報的是
+# "no tests ran"（exit 5），等於 README 記載的驗證指令什麼都沒驗。
+def test_all_checks_passed():
+    """模組層的檢查在 import 時已跑完，這裡把失敗數斷言出來。"""
+    assert failed == 0, f"{failed} 項檢查失敗（詳見上方 FAIL 行）"
