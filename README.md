@@ -42,27 +42,33 @@
 
 ---
 
-## 兩種使用方式
+## 快速開始
 
-| | 線上版 | 桌面版 |
-|---|---|---|
-| 網址／取得 | [pyhsu-cyber.github.io/AI-Powered-Ad-Screening](https://pyhsu-cyber.github.io/AI-Powered-Ad-Screening/) | [Releases](../../releases) 下載 zip |
-| 安裝 | 免安裝，開網頁即用 | 解壓縮後雙擊 exe |
-| 文字辨識 | 瀏覽器 OCR（約 5 秒，首次下載模型 9 MB） | Windows 內建 OCR（約 1 秒）＋瀏覽器 OCR 交叉比對 |
-| 平台 | 任何裝置，含手機 | Windows 10 / 11 |
-| 隱私 | 全程在瀏覽器內執行，圖片不上傳 | 全程在本機執行 |
+開這個網址就能用，不用安裝任何東西：
 
-兩版功能相同（違規比對、法條對應、陳情信生成）。桌面版多一套 Windows OCR，
-辨識較快且會自動交叉比對補漏。
+**https://pyhsu-cyber.github.io/AI-Powered-Ad-Screening/**
 
-## 快速開始（桌面版）
+1. 上傳廣告截圖 —— 點選、拖曳（丟在頁面任何地方都行），或按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 貼上
+2. 載入完會自動分析
+3. 核對「廣告文字」欄位（OCR 難免有錯字，可直接改，或用左鍵在圖上框選要重讀的那一塊）
+4. 選對產品類別、填檢舉資料 → 生成陳情信 → 列印或存成 PDF
 
-1. 到 [Releases](../../releases) 下載最新版 zip 並解壓縮
-2. 雙擊 `違規廣告快篩.exe`（Windows 首次執行會攔截，點「其他資訊」→「仍要執行」）
-3. 瀏覽器會自動開啟 `http://localhost:8765`
-4. 上傳廣告截圖（或按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 貼上）→ 開始快篩分析
-
+圖片與檢舉人個資全程在你的瀏覽器內處理，不會上傳。
 完整操作說明見 [`功能使用說明書.html`](功能使用說明書.html)（可離線開啟與列印）。
+
+### 關於桌面版（exe）
+
+`backend/` 與 `ocr.ps1` 是桌面版的原始碼，跑起來會提供一套走 Windows 內建 OCR
+的本機服務。**目前不維護、也不發布**：
+
+- 現存的那顆 exe 是 v6 建的，之後從未重建。裡面封裝的判定邏輯停在 v6，
+  與現行版本差 590 行以上——**它產出的結果比網頁版差**
+  （仍有 v13 修掉的引用位移、沒有 v18 的法定警語語境排除）
+- 網頁版自 v19 起也有多趟補讀，兩邊的辨識能力差距只剩「Windows OCR 比較快、
+  且不必下載辨識模型」
+- 2026-08-28 已把 exe 從 git 歷史移除（repo 23.9 MB → 1.7 MB），並加入 `.gitignore`
+
+原始碼保留，需要離線版時仍可重建；但請以網頁版為準。
 
 ### 環境需求
 
@@ -75,8 +81,7 @@
 ## 專案結構
 
 ```
-違規廣告快篩.exe        主程式（PyInstaller 單檔封裝）
-ocr.ps1                 Windows.Media.Ocr 一次性 CLI 腳本
+ocr.ps1                 Windows.Media.Ocr 一次性 CLI 腳本（桌面版用，不維護）
 VERSION                 版號唯一來源 ← build.py 讀它並反查各文件是否一致
 regulations.json        法規、違規關鍵字與品類範圍 ← 唯一真相來源
 健康食品許可證.json      食藥署健康食品資料集快照（565 筆，離線比對用）
@@ -89,7 +94,7 @@ static/index.html       操作介面（build.py 產生，勿手改）
   package.py            打包成 版本封存/違規廣告快篩_vN.zip（含機敏檔案複驗）
   update_healthfood.py  從 TFDA 開放資料更新健康食品快照（需連網，平常不必跑）
 
-docs/                   GitHub Pages 線上版（純瀏覽器，不需要 exe）
+docs/                   線上版 ← 實際對外服務的就是這份
 
 backend/                Flask 後端重實作（規格與測試夾具，尚未接線）
 tests/                  pytest 測試
@@ -101,25 +106,24 @@ SPEC/                   需求規格書（FR / EC / NFR / AC）
 
 ### 為什麼前端要建置
 
-`違規廣告快篩.exe` 的內建伺服器只服務四個路徑：
+線上版是**單一 HTML 檔**——CSS、JS、logo、法規資料、健康食品許可證快照全部
+內嵌，沒有任何外部檔案引用（唯一的執行期外部相依是 CDN 上的 tesseract.js）。
 
-| 路徑 | 回應 |
-|---|---|
-| `/` 與 `/index.html` | 讀 `static/index.html` |
-| `/api/status` | 是否已設定 AI 金鑰 |
-| `/api/analyze` | OCR 與法規比對 |
+這個限制原本來自桌面版：exe 的內建伺服器只服務 `/`、`/index.html`、
+`/api/status`、`/api/analyze`，其餘路徑一律 404。現在即使不管桌面版，
+單檔仍然是對的——一個檔案就能丟給任何人用，也不會有資源載不到的問題。
 
-**其餘路徑一律 404**，所以 CSS、JS、圖片都必須內嵌成單一 HTML。改前端請改 `實作作業/` 的原始檔，
-然後執行：
+所以改前端請改 `實作作業/` 的原始檔，然後執行：
 
 ```bash
 cd 實作作業
 python build.py
 ```
 
-一次會產出兩個版本：`static/index.html`（桌面版，走 `/api/analyze`）與
-`docs/index.html`（線上版，前端自己比對）。同一份原始碼靠啟動時偵測 `/api/status`
-是否存在來決定走哪條路，不需要分岔維護。
+一次會產出兩份**位元組完全相同**的輸出：`docs/index.html`（線上版，實際對外
+服務的就是這份）與 `static/index.html`（桌面版跑起來時讀的那份）。
+同一份原始碼靠啟動時偵測 `/api/status` 是否存在來決定走哪條路，
+所以即使桌面版不維護了，也不需要分岔。
 
 ---
 
@@ -193,7 +197,8 @@ python tests/test_whitelist.py         # 也可以單獨跑任何一支，會印
    但本工具讀不到字號的效力，一律標示出來讓人工判斷
    （見 `測試資料/真實案例/R7_已知限制_領證健康食品.png`）。
 4. **產品類別需人工選擇**。免費模式的後端永遠回「無法判定」，選錯會引用到錯誤的法條。
-5. `backend/` 為規格與測試夾具，**尚未與前端接線**，與 exe 的行為存在定義落差。
+5. `backend/` 是桌面版的原始碼與測試夾具，**目前不維護**。現存的 exe 是 v6 建的，
+   判定邏輯停在 v6，產出的結果比網頁版差（見上方「關於桌面版」）。
 
 ---
 
@@ -219,4 +224,4 @@ python tests/test_whitelist.py         # 也可以單獨跑任何一支，會印
 ## 版本
 
 各版變更與驗證結果見 [`說明文件/版本紀錄.md`](說明文件/版本紀錄.md)。
-可執行的封裝檔在 [Releases](../../releases)。
+線上版：https://pyhsu-cyber.github.io/AI-Powered-Ad-Screening/

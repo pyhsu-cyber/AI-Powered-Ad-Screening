@@ -149,16 +149,16 @@
 
 <nav aria-label="目錄">
   <div class="brand">違規廣告快篩</div>
-  <span class="ver">v19 使用說明書</span>
+  <span class="ver">v20 使用說明書</span>
   <div class="grp">開始使用</div>
   <ol>
     <li><a href="#about">這套工具在做什麼</a></li>
-    <li><a href="#start">三步驟開始</a></li>
+    <li><a href="#start">怎麼開始</a></li>
     <li><a href="#flow">操作流程</a></li>
   </ol>
   <div class="grp">功能說明</div>
   <ol>
-    <li><a href="#ocr">兩套辨識引擎</a></li>
+    <li><a href="#ocr">文字辨識</a></li>
     <li><a href="#law">產品類別與法條</a></li>
     <li><a href="#letter">陳情信</a></li>
   </ol>
@@ -194,32 +194,25 @@
 </section>
 
 <section id="start">
-  <h2>三步驟開始</h2>
-  <div class="steps">
-    <div class="step">
-      <div class="step-n"></div>
-      <div>
-        <h3>雙擊 <code>違規廣告快篩.exe</code></h3>
-        <p>會跳出一個黑色視窗——那是程式本體，<strong>請不要關掉</strong>。
-        瀏覽器會自動開啟操作頁面。</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-n"></div>
-      <div>
-        <h3>看到藍色警告視窗時點「仍要執行」</h3>
-        <p>因為這支程式沒有購買數位簽章，Windows 第一次執行會攔一下。
-        點「其他資訊」→「仍要執行」即可。</p>
-      </div>
-    </div>
-    <div class="step">
-      <div class="step-n"></div>
-      <div>
-        <h3>瀏覽器沒自動開就手動開</h3>
-        <p>網址是 <code>http://localhost:8765</code>。要結束程式，關掉那個黑色視窗就好。</p>
-      </div>
-    </div>
-  </div>
+  <h2>怎麼開始</h2>
+  <p>開這個網址就能用，<b>不用安裝任何東西</b>：</p>
+  <p style="font-size:1.05rem"><a href="https://pyhsu-cyber.github.io/AI-Powered-Ad-Screening/"
+     target="_blank">https://pyhsu-cyber.github.io/AI-Powered-Ad-Screening/ ↗</a></p>
+  <p>手機、平板、任何瀏覽器都可以。圖片與檢舉人個資全程在你的瀏覽器內處理，
+  不會上傳到任何地方。</p>
+  <div class="note">第一次辨識圖片時要下載中文辨識模型（約 8 MB），
+  之後瀏覽器會快取，後續就不用再等。</div>
+
+  <h3>關於桌面版 exe</h3>
+  <p>資料夾裡那顆 <code>違規廣告快篩.exe</code> <b>目前不維護，也不建議使用</b>。</p>
+  <p>它是 v6 建的，之後從未重建，裡面封裝的判定邏輯停在 v6：</p>
+  <ul>
+    <li>陳情信的逐字引用會位移成錯字（v13 已在網頁版修掉）</li>
+    <li>沒有法定警語語境排除，會把「糖尿病患者請諮詢醫師」判成違規（v18 修的）</li>
+  </ul>
+  <p>網頁版走的是前端程式碼，每次改版都是最新的；v19 起連多趟補讀也補上了。
+  兩邊現在只差「Windows 內建 OCR 比較快、且不必下載辨識模型」。
+  原始碼（<code>backend/</code>、<code>ocr.ps1</code>）留著，需要離線版時仍可重建。</p>
 </section>
 
 <section id="flow">
@@ -292,37 +285,28 @@
 </section>
 
 <section id="ocr">
-  <h2>兩套辨識引擎</h2>
-  <p>兩套引擎讀錯的地方不一樣，所以合併使用抓得比較全。你不需要選，系統會自動安排。</p>
+  <h2>文字辨識</h2>
+  <p>網頁版用瀏覽器 OCR（tesseract），整個辨識過程都在你的瀏覽器裡跑，
+  圖片不會上傳。第一次使用需連網下載中文辨識模型（約 8 MB），之後會快取。</p>
+  <p>出結果之後還會在背景<b>再讀幾趟</b>——用不同的影像處理（2 倍放大、
+  2 倍放大＋對比拉伸）把第一趟漏掉的字補回來，補到新的違規就更新畫面。</p>
+  <div class="note">實測 17 張圖：合成的測試圖原圖就讀滿了，補讀一個字都沒多；
+  但實際使用者丟進來的廣告截圖有兩張是<b>從 0 項變成 1 項</b>。
+  真實廣告版面雜、對比差、字疊在照片與人像上，正是需要補讀的那一群。
+  代價是每張多約 1.5 秒，所以放在背景跑，不會擋住你看結果。</div>
 
-  <div class="tw">
-    <table>
-      <thead><tr><th>引擎</th><th>角色</th><th class="num">速度</th><th>需要什麼</th></tr></thead>
-      <tbody>
-        <tr>
-          <td><strong>Windows 內建 OCR</strong></td>
-          <td>主要，預設使用</td>
-          <td class="num">約 1 秒</td>
-          <td>完全離線，不需下載</td>
-        </tr>
-        <tr>
-          <td><strong>瀏覽器 OCR</strong></td>
-          <td>備援＋背景交叉比對</td>
-          <td class="num">約 5 秒</td>
-          <td>第一次需連網下載模型約 9 MB，之後會快取</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>它們什麼時候各自出場</h3>
-  <ul>
-    <li>正常情況：Windows OCR 先出結果 → 瀏覽器 OCR 在背景補漏</li>
-    <li>Windows OCR 不能用時（缺中文 OCR 語言套件、<code>ocr.ps1</code> 被防毒擋下、
-        或跑的是舊版程式）：<strong>自動改用瀏覽器 OCR</strong>，不會整個卡住</li>
-    <li>覺得還有漏字：按文字框上方的<strong>「用瀏覽器 OCR 再補一次」</strong>，
-        結果會<strong>附加</strong>在原本文字後面，不是取代</li>
-  </ul>
+  <h3>讀不好的時候，由好到壞依序試</h3>
+  <ol>
+    <li><b>用左鍵在預覽圖上框選要讀的那一塊。</b>框選會把那小塊單獨放大再讀，
+        通常比整張讀準得多，也不會把頁尾、浮水印、旁邊的留言一起讀進來。</li>
+    <li>按文字框上方的<b>「換一種讀法再補一次」</b>——換一組影像處理重讀，
+        結果會<b>附加</b>在原本文字後面，不是取代。</li>
+    <li>用 <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> 截圖後，在跳出的
+        「剪取工具」視窗點<b>「文字動作」</b>，可直接複製圖片上的文字貼過來。</li>
+    <li>直接把廣告文案打字或貼到「廣告文字」欄位。</li>
+  </ol>
+  <div class="note">桌面版另有一套 Windows 內建 OCR（約 1 秒、離線），
+  但桌面版目前不維護，見前面「關於桌面版 exe」。</div>
 
   <div class="note">
     <span class="lbl">兩套都讀不好時</span>
@@ -332,17 +316,6 @@
 </section>
 
 <section id="law">
-  <h2>線上版與桌面版的辨識差異</h2>
-  <p>桌面版（exe）有兩套引擎：Windows 內建 OCR 當主力（約 1 秒、離線），
-  瀏覽器 tesseract 在背景做跨引擎交叉比對。線上版只有 tesseract 一套。</p>
-  <p><b>但補讀機制兩邊都有。</b>線上版會在出結果之後，於背景用不同的影像處理
-  （2 倍放大、2 倍放大＋對比拉伸）再讀幾趟，把第一趟漏掉的字補回來，
-  補到新的違規就更新畫面。</p>
-  <div class="note">實測 17 張圖：合成的測試圖原圖就讀滿了，補讀一個字都沒多；
-  但實際使用者丟進來的廣告截圖有兩張是<b>從 0 項變成 1 項</b>。
-  真實廣告版面雜、對比差、字疊在照片與人像上，正是需要補讀的那一群。
-  代價是每張多約 1.5 秒，所以放在背景跑，不會擋住你看結果。</div>
-
   <h2>只讀某一塊：框選辨識</h2>
   <p>用滑鼠<b>左鍵在預覽圖上拖出一個框</b>，放開就會只辨識那一塊，
   結果接在「廣告文字」後面自成一行。同一張圖可以重複框好幾塊，
@@ -470,9 +443,10 @@
   </div>
 
   <div class="note stop">
-    <span class="lbl">改完必須重開程式</span>
-    <p><code>regulations.json</code> 是程式<strong>啟動時載入一次</strong>的。
-    改完只重整網頁<strong>不會生效</strong>，要把黑色視窗關掉再重新執行 exe。</p>
+    <span class="lbl">改完必須重新建置</span>
+    <p>關鍵字是<strong>建置時內嵌</strong>進 <code>index.html</code> 的，不是執行時讀檔。
+    改完 <code>regulations.json</code> 要執行 <code>python 實作作業/build.py</code>
+    重新產生網頁，只重整瀏覽器<strong>不會生效</strong>。</p>
   </div>
 
   <h3>新增關鍵字的五條規則</h3>
@@ -519,11 +493,13 @@
   按了之後若一直轉圈，看一下狀態列的文字，通常會說明卡在哪一步。</p>
 
   <h3>辨識出來的字很多錯，或根本讀不到？</h3>
-  <p>依序試：① 按「用瀏覽器 OCR 再補一次」；② 用原圖而不是縮圖（解析度低於 600px 會提醒你）；
-  ③ 用「剪取工具 → 文字動作」複製文字後手動貼上。</p>
+  <p>最有效的是<b>用左鍵在圖上框選要讀的那一塊</b>——單獨放大再讀，通常準得多。
+  其次：按「換一種讀法再補一次」；用原圖而不是縮圖（解析度低於 600px 會提醒你）；
+  用「剪取工具 → 文字動作」複製文字後手動貼上。</p>
 
   <h3>改了 regulations.json 卻沒變化？</h3>
-  <p>要關掉程式重開。重整網頁沒有用。</p>
+  <p>要執行 <code>python 實作作業/build.py</code> 重新建置。只重整網頁沒有用——
+  關鍵字是建置時內嵌進網頁的。</p>
 
   <h3>陳情信引用的法條看起來不對？</h3>
   <p>檢查 STEP 3 的「產品類別」有沒有選對。預設是「無法判定」，會沿用食安法。</p>
@@ -563,8 +539,9 @@
 <section id="files">
   <h2>檔案結構</h2>
   <div class="tree">
-<b>違規廣告快篩.exe</b>      <i>主程式，雙擊這個</i>
-<b>ocr.ps1</b>              <i>Windows 內建 OCR 腳本</i>
+<b>docs/index.html</b>      <i>網頁版本體 ← 實際使用的就是這一份（單檔，全部內嵌）</i>
+<b>違規廣告快篩.exe</b>      <i>桌面版主程式（不維護，見前面說明）</i>
+<b>ocr.ps1</b>              <i>桌面版的 Windows 內建 OCR 腳本</i>
 <b>VERSION</b>              <i>版號唯一來源，建置時會據此檢查各文件是否一致</i>
 <b>regulations.json</b>     <i>法規與違規關鍵字資料庫</i>
 <b>健康食品許可證.json</b>    <i>食藥署健康食品資料集快照，離線比對健字號用</i>
@@ -577,7 +554,7 @@
 <b>測試資料/</b>             <i>六張合成測試圖 + 真實案例／九張，與預期結果</i>
 <b>實作作業/</b>             <i>前端原始碼；build.py 建置、package.py 打包、
                           update_healthfood.py 更新健康食品快照</i>
-<b>docs/</b>                <i>GitHub Pages 線上版（純瀏覽器，不需要 exe）</i>
+<b>backend/</b>             <i>桌面版原始碼與測試夾具（不維護）</i>
 <b>backend/</b>             <i>後端參考實作與其測試</i>
 <b>tests/</b>               <i>單元／UAT／E2E 與資料測試</i>
 <b>設計素材/</b>             <i>logo 與介面設計參考</i>
@@ -585,15 +562,18 @@
   </div>
   <div class="note warn">
     <span class="lbl">搬移時注意</span>
-    <p>前四項（exe、<code>ocr.ps1</code>、<code>regulations.json</code>、<code>static</code> 資料夾）
-    必須維持現在的相對位置，程式才找得到。其餘資料夾只是文件與素材，刪掉不影響執行。</p>
+    <p><b>網頁版只需要 <code>docs/index.html</code> 一個檔案</b>——CSS、JS、法規資料、
+    健康食品許可證快照全部內嵌。要離線帶著走就把那一個檔存下來雙擊開啟即可，
+    唯一需要連網的是第一次下載辨識模型。</p>
+    <p>若要跑桌面版，exe、<code>ocr.ps1</code>、<code>regulations.json</code>、
+    <code>static</code> 資料夾必須維持現在的相對位置。</p>
     <p>要改介面請改 <code>實作作業/</code> 裡的原始檔，改完執行 <code>python build.py</code>；
     直接改 <code>static/index.html</code> 會在下次建置時被覆蓋。</p>
   </div>
 </section>
 
 <footer>
-  <p>AI 違規廣告快篩與一鍵通報系統 v19　·　本說明書可離線開啟，也可直接列印。</p>
+  <p>AI 違規廣告快篩與一鍵通報系統 v20　·　本說明書可離線開啟，也可直接列印。</p>
   <p>AI 判定僅供參考，實際違規認定與裁罰以主管機關為準；
   法條內容請以全國法規資料庫（law.moj.gov.tw）現行條文為準。</p>
 </footer>
