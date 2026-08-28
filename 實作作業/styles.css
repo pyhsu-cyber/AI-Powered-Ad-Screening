@@ -111,6 +111,14 @@
               border-top:1px solid var(--line);padding-top:11px}
   #spinner{display:none;text-align:center;color:var(--muted);padding:16px;font-size:.87rem}
   .hidden{display:none}
+  /* 全頁拖曳提示層：出結果後 #drop 會被 Step 2~4 的卡片擠出畫面，
+     使用者幾乎一定是把下一張圖丟在結果區，所以整個視窗都要能接。 */
+  #dropOverlay{position:fixed;inset:0;z-index:90;display:flex;align-items:center;
+    justify-content:center;background:rgba(6,20,27,.82);backdrop-filter:blur(2px);
+    pointer-events:none}
+  #dropOverlay>div{border:2.5px dashed var(--teal);border-radius:18px;padding:44px 60px;
+    text-align:center;font-size:1.15rem;color:var(--teal);background:rgba(14,39,51,.72)}
+  #dropOverlay small{display:block;margin-top:10px;font-size:.82rem;color:var(--dim)}
   footer{text-align:center;color:var(--dim);font-size:.74rem;padding:24px}
   /* 版號要看得到 —— 使用者回報問題時說不出自己在跑哪一版，就無從重現 */
   footer .ver{display:inline-block;margin-top:6px;opacity:.75;letter-spacing:.05em}

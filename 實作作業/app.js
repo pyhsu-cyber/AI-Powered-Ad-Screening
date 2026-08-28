@@ -345,10 +345,53 @@ function analyzeLocal(text) {
 /* ============ 圖片載入（點選 / 拖曳 / 貼上） ============ */
 const drop = $('drop'), fileInput = $('file');
 drop.onclick = () => fileInput.click();
+fileInput.onchange = () => {
+  if (fileInput.files[0]) loadFile(fileInput.files[0]);
+  fileInput.value = '';        // 不清掉的話，再挑同一個檔名不會觸發 change
+};
+
+/* 拖曳收在整個 window，不只收在 #drop。
+   出結果後 Step 2~4 的卡片會把 #drop 擠到畫面外，使用者要換第二張圖時幾乎一定是
+   丟在結果區——那裡沒有 handler，瀏覽器就走預設行為「直接開啟那張圖」，整頁狀態
+   連同已填的檢舉人資料一起沒了。這正是「無法拖曳第二張圖片接著分析」的成因。
+   window 層的 dragover 一定要 preventDefault，否則 drop 事件根本不會觸發。 */
+const dropOverlay = $('dropOverlay');
+let dragDepth = 0;
+
+function draggingFiles(e) {
+  const dt = e.dataTransfer;
+  if (!dt || !dt.types) return false;
+  return [].slice.call(dt.types).indexOf('Files') >= 0;   // 純文字拖曳不要跳提示
+}
+function showDropHint(on) {
+  dropOverlay.classList.toggle('hidden', !on);
+  if (!on) drop.classList.remove('over');
+}
+
+window.addEventListener('dragenter', e => {
+  if (!draggingFiles(e)) return;
+  e.preventDefault();
+  dragDepth++;                    // 經過子元素會連發 enter/leave，用計數才不會閃爍
+  showDropHint(true);
+});
+window.addEventListener('dragover', e => {
+  if (!draggingFiles(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+window.addEventListener('dragleave', e => {
+  if (!draggingFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) showDropHint(false);
+});
+window.addEventListener('drop', e => {
+  e.preventDefault();             // 少了這行，瀏覽器會導航到那張圖，整頁狀態全丟
+  dragDepth = 0;
+  showDropHint(false);
+  const f = e.dataTransfer && e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
-drop.ondragleave = () => drop.classList.remove('over');
-drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); };
-fileInput.onchange = () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); };
 document.addEventListener('paste', e => {
   const items = (e.clipboardData && e.clipboardData.items) || [];
   const item = [].slice.call(items).find(i => i.type.indexOf('image/') === 0);
@@ -389,9 +432,12 @@ function loadFile(f) {
     img.style.display = 'block';
     img.onload = () => {
       const w = img.naturalWidth, h = img.naturalHeight;
-      drop.innerHTML = '已選擇：<b>' + esc(f.name || '剪貼簿圖片') + '</b>'
+      // 只覆寫 #dropMain —— 以前是整個 drop.innerHTML 覆寫，第一次上傳後
+      // 「支援哪些格式、可以拖曳」的提示就永久消失了
+      $('dropMain').innerHTML = '已選擇：<b>' + esc(f.name || '剪貼簿圖片') + '</b>'
         + '<br><small>' + esc((type || 'image/png').replace('image/', '').toUpperCase())
-        + '　·　' + w + ' × ' + h + ' px　·　' + mb.toFixed(1) + ' MB　·　點擊可更換</small>';
+        + '　·　' + w + ' × ' + h + ' px　·　' + mb.toFixed(1) + ' MB'
+        + '　·　點擊、拖曳或 Ctrl + V 都可以直接換下一張</small>';
       if (Math.min(w, h) < 600) {
         notify('noticeStep1', '這張圖解析度偏低（' + w + ' × ' + h + ' px），文字辨識可能不準。\n'
              + '建議改用原圖或放大後的截圖；辨識完成後請務必檢查「廣告文字」欄位。', 'warn');
@@ -413,8 +459,23 @@ function loadFile(f) {
       runOCR(true);                           // 已知 Windows OCR 不能用 → 直接跑瀏覽器 OCR
     } else {
       ocrMsg(standalone
-        ? '圖片已載入 — 按「開始快篩分析」，會在你的瀏覽器裡辨識圖上的文字（首次需下載辨識模型約 9 MB）。'
-        : '圖片已載入 — 按「開始快篩分析」，會用 Windows 內建 OCR 讀取圖上的文字。');
+        ? '圖片已載入 — 正在你的瀏覽器裡辨識圖上的文字（首次需下載辨識模型約 9 MB）。'
+        : '圖片已載入 — 正在用 Windows 內建 OCR 讀取圖上的文字。');
+    }
+
+    // 載入完直接分析，不用再捲回上面按按鈕。三個入口（拖曳／Ctrl+V／點選檔案）
+    // 都會走到這裡，所以換下一張圖就是「丟進來」這一個動作。
+    //
+    // 但只在「廣告文字」是空的時候自動跑。欄位有字而且不是機器填的，代表使用者
+    // 自己打過或改過（L1：機器不覆蓋使用者的字），上面的清空邏輯就不會動它；
+    // 這時自動分析會拿「上一張圖的文字」去配「這一張圖」，產出的陳情信是錯的。
+    if (!ta.value.trim()) {
+      runAnalysis();
+    } else {
+      notify('noticeStep1',
+             '已載入新圖片，但沒有自動分析 —「廣告文字」是你自己編輯過的，'
+             + '系統不會覆蓋它。要改用新圖重新辨識，請先清空該欄位再按「開始快篩分析」；'
+             + '想沿用現在這段文字的話，直接按分析即可。', 'warn', 10000);
     }
   };
   reader.readAsDataURL(f);
@@ -737,7 +798,7 @@ function normalizeAI(d, model) {
 }
 
 /* ============ 開始分析 ============ */
-$('analyzeBtn').onclick = async () => {
+async function runAnalysis() {
   const btn = $('analyzeBtn'), ta = $('adText');
   clearNotice('noticeStep1');
   if (!imageB64 && !ta.value.trim()) {
@@ -774,7 +835,8 @@ $('analyzeBtn').onclick = async () => {
     setBusy($('ocrBtn'), null);
     showSpinner(false);
   }
-};
+}
+$('analyzeBtn').onclick = runAnalysis;
 
 let _bgToken = 0;
 function myTokenStale() { return _bgToken !== runToken; }

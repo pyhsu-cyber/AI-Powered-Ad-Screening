@@ -24,8 +24,8 @@
 <main>
   <div class="card">
     <h2>Step 1　上傳廣告素材</h2>
-    <div id="drop">點擊或拖曳廣告截圖到這裡<br><small>也可以直接按 Ctrl + V 貼上剛截好的圖</small>
-      <div class="fmt">支援 JPG / PNG / WebP / GIF / BMP　·　單張上限 10 MB　·　建議短邊 600px 以上辨識較準</div>
+    <div id="drop"><div id="dropMain">點擊或拖曳廣告截圖到這裡<br><small>也可以直接按 Ctrl + V 貼上剛截好的圖</small></div>
+      <div class="fmt">支援 JPG / PNG / WebP / GIF / BMP　·　單張上限 10 MB　·　建議短邊 600px 以上辨識較準　·　圖片丟在頁面任何地方都可以</div>
     </div>
     <input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" class="hidden">
     <img id="preview" alt="預覽">
@@ -114,6 +114,8 @@
   </div>
 </main>
 <footer>PoC 原型 — 依《AI 導入方案：違規廣告檢舉 App v2》規格開發。檢舉人個資僅在本機瀏覽器處理，不會上傳雲端儲存。<br><span class="ver">{{VERSION}}</span></footer>
+
+<div id="dropOverlay" class="hidden"><div>放開就開始分析<small>換一張圖不用捲回上面，丟在哪裡都可以</small></div></div>
 
 <script src="app.js"></script>
 </body>
