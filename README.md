@@ -153,7 +153,7 @@ python -m pytest backend tests -q      # 全部
 python tests/test_whitelist.py         # 也可以單獨跑任何一支，會印出逐項結果
 ```
 
-現行測試基線（共 **367 項檢查 / 11 支測試檔**，全數通過）：
+現行測試基線（共 **392 項檢查 / 12 支測試檔**，全數通過）：
 
 | 測試檔 | 項數 | 守什麼 |
 |---|---:|---|
@@ -168,8 +168,9 @@ python tests/test_whitelist.py         # 也可以單獨跑任何一支，會印
 | `tests/test_healthfood.py` | 31 | 健康食品許可證快照、核准範圍排除 |
 | `tests/test_ocr_filter.py` | 25 | OCR 幻覺行濾除，且不誤殺低信心的真實內容 |
 | `tests/test_region_pick.py` | 31 | 框選辨識的接續與去重、換圖清空文字 |
+| `tests/test_ocr_passes.py` | 25 | 線上版的多趟補讀、放大像素上限 |
 
-其中 `test_healthfood.py`、`test_ocr_filter.py` 與 `test_region_pick.py` 會用 node 直接跑**出貨產物
+其中 `test_healthfood.py`、`test_ocr_filter.py`、`test_region_pick.py` 與 `test_ocr_passes.py` 會用 node 直接跑**出貨產物
 `static/index.html` 裡的那份程式碼**（不是另寫一份等價實作）；機器上沒有 node
 就只跑資料層檢查並印 INFO，不會變成硬相依。
 

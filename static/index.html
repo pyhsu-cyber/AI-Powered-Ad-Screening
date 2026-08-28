@@ -355,7 +355,7 @@
     <div class="disclaimer">寄送方式：可透過各縣市衛生局線上陳情系統、衛福部食藥署「食品藥物業者登錄平台／陳情檢舉信箱」，或以書面郵寄。列印時會自動把廣告截圖附在信後。</div>
   </div>
 </main>
-<footer>PoC 原型 — 依《AI 導入方案：違規廣告檢舉 App v2》規格開發。檢舉人個資僅在本機瀏覽器處理，不會上傳雲端儲存。<br><span class="ver">v18</span></footer>
+<footer>PoC 原型 — 依《AI 導入方案：違規廣告檢舉 App v2》規格開發。檢舉人個資僅在本機瀏覽器處理，不會上傳雲端儲存。<br><span class="ver">v19</span></footer>
 
 <div id="dropOverlay" class="hidden"><div>放開就開始分析<small>換一張圖不用捲回上面，丟在哪裡都可以</small></div></div>
 
@@ -1337,6 +1337,7 @@ function loadScript(src) {
 
 /* 縮放圖片。實測「無條件放大」反而會讓辨識變差（插補會把筆畫糊掉），
    所以預設 1 倍原圖；只有在字太少、疑似小圖時才放大重試一次。 */
+const MAX_CANVAS_PX = 12e6;   // 放大後的總像素上限，見 prepare()
 const MAX_SIDE = 4000;   // 超過這個尺寸才縮小，純粹避免超大圖跑太慢
 
 function loadImg(dataUrl) {
@@ -1377,6 +1378,12 @@ function stretchContrast(canvas) {
 
 /* 縮放並選擇性套用前處理，回傳 dataURL */
 function prepare(img, scale, enhance) {
+  // 放大受總像素上限約束。4000×3000 的原圖乘 2 就是 9600 萬像素、約 384 MB 的
+  // RGBA，再 toDataURL 會產出上百 MB 的字串——分頁直接 OOM，iOS Safari 更是
+  // 超過 1670 萬像素就回空白 canvas。縮小（scale<1）不受影響。
+  const px = img.naturalWidth * img.naturalHeight;
+  if (scale > 1 && px * scale * scale > MAX_CANVAS_PX)
+    scale = Math.max(1, Math.sqrt(MAX_CANVAS_PX / px));
   const c = document.createElement('canvas');
   c.width = Math.round(img.naturalWidth * scale);
   c.height = Math.round(img.naturalHeight * scale);
@@ -1908,30 +1915,73 @@ async function serverOcrVariants(baseText) {
   return merged;
 }
 
+/* 純瀏覽器模式的多趟補讀。
+   exe 模式靠 serverOcrVariants 用 Windows OCR 對不同前處理各讀一趟；線上版
+   沒有那條路，這裡用同一套前處理讓 tesseract 再讀，補回第一趟漏掉的字。
+
+   實測 17 張圖：六張合成測試圖原圖就讀滿了，多跑兩趟一個關鍵字都沒多；
+   但使用者實際丟進來的真實廣告截圖有兩張是 0 → 1
+   （「不易形成體脂肪」靠 2 倍放大讀到、「漢方」靠對比拉伸讀到）。
+   真實廣告版面雜、對比差、字疊在照片上，正是需要補讀的那一群。
+   代價是每張多約 1.5 秒（大圖到 4.5 秒），所以放在背景、出結果之後才跑。 */
+async function browserOcrVariants(baseText) {
+  if (!rawDataUrl) return baseText;
+  const img = await loadImg(rawDataUrl);
+  const small = Math.min(img.naturalWidth, img.naturalHeight) < 700;
+  const passes = small ? [[2, false], [2, true]] : [[2, true]];
+  let merged = baseText;
+  const worker = await getTessWorker();
+  for (let i = 0; i < passes.length; i++) {
+    if (myTokenStale()) return merged;
+    const scale = passes[i][0], enhance = passes[i][1];
+    try {
+      ocrMsg('背景補讀中：換一種影像處理再辨識（' + (i + 1) + '/' + passes.length + '）…', true);
+      const d = await worker.recognize(prepare(img, scale, enhance));
+      if (myTokenStale()) return merged;
+      const got = tidyCJK(textWithoutPhantomLines(d.data));
+      if (charCount(got) >= 4) merged = mergeOcrText(merged, got);
+    } catch (e) { /* 單一變體失敗不影響其他趟 */ }
+  }
+  return merged;
+}
+
 /* 分析完成後，背景再用瀏覽器 OCR 讀一次做交叉比對。
    Windows OCR 有時會把關鍵字吃掉（例如「改善心血管疾病」讀成「改」），
    兩套引擎互補可以把漏掉的違規補回來。 */
 async function crossCheckWithBrowserOCR() {
-  if (standalone) return;                      // 純瀏覽器模式本來就只有這一套引擎
   if (aiEnabled || gKeyGet()) return;          // AI 模式直接看圖，不需要
-  if (!imageB64 || serverOcr !== true) return; // 只有走過 Windows OCR 才需要補
+  if (!rawDataUrl) return;                     // 純文字輸入沒有圖可以補讀
+  if (!standalone && serverOcr !== true) return;  // exe 模式：只有走過 Windows OCR 才需要補
   const ta = $('adText');
   if (!textIsMachine) return;                  // 使用者已經自己改過字，不要動
   const myToken = runToken;
   _bgToken = runToken;
   const beforeText = ta.value.trim();
-
   const before = (analysis && analysis.violations || []).length;
-  try {
-    // 先用不同前處理讓 Windows OCR 再讀幾趟——比下載瀏覽器辨識模型快得多
-    ocrMsg('背景補讀中：調整圖片後再辨識一次…', true);
-    const widened = await serverOcrVariants(ta.value);
-    if (myToken !== runToken || !textIsMachine) return;
-    if (widened !== ta.value) { ta.value = widened; lastOcrText = widened; }
+  // 補讀途中會把狀態列改成「背景補讀中…」，跑完要還原，否則轉圈會一直留著
+  const ocrBarBefore = $('ocrStatus').innerHTML;
+  let touchedBar = false;
 
-    ocrMsg('背景交叉比對中：用瀏覽器 OCR 再讀一次，避免漏字…', true);
-    await runOCR(false);
-    if (myToken !== runToken || !textIsMachine) return;   // 換過圖、或使用者中途改了字
+  try {
+    if (standalone) {
+      // 線上版只有 tesseract 一套引擎，沒有「換另一套引擎」可比對，
+      // 改用不同前處理多讀幾趟來補。
+      touchedBar = true;
+      const widened = await browserOcrVariants(ta.value);
+      if (myToken !== runToken || !textIsMachine) return;
+      if (widened !== ta.value) { ta.value = widened; lastOcrText = widened; }
+    } else {
+      // 先用不同前處理讓 Windows OCR 再讀幾趟——比下載瀏覽器辨識模型快得多
+      touchedBar = true;
+      ocrMsg('背景補讀中：調整圖片後再辨識一次…', true);
+      const widened = await serverOcrVariants(ta.value);
+      if (myToken !== runToken || !textIsMachine) return;
+      if (widened !== ta.value) { ta.value = widened; lastOcrText = widened; }
+
+      ocrMsg('背景交叉比對中：用瀏覽器 OCR 再讀一次，避免漏字…', true);
+      await runOCR(false);
+      if (myToken !== runToken || !textIsMachine) return;   // 換過圖、或使用者中途改了字
+    }
     if (ta.value.trim() === beforeText) return;           // 沒有補到新文字
     const data = await postAnalyze(null, null, ta.value);
     if (myToken !== runToken) return;
@@ -1946,21 +1996,27 @@ async function crossCheckWithBrowserOCR() {
            + ' 項違規（合計 ' + after + ' 項），上方結果已更新'
            + (letterShown ? '，下方陳情信也已重新生成。' : '。'), 'ok', 9000);
     }
-    // 辨識本身不可靠時，這件事比「補抓到幾項」重要，放最後發以免被蓋掉
-    if (lastOcrConfidence !== null && lastOcrConfidence < UNSTABLE_OCR_CONF) {
+  } catch (e) {
+    ocrMsg('（背景補讀未完成：' + e.message + '，不影響上方結果）');
+    touchedBar = false;
+  } finally {
+    // 不論從哪一條路徑離開，都不能讓「背景補讀中…」的轉圈留在畫面上。
+    // 這個函式有多處提早 return（換過圖、使用者改了字、沒補到新文字），
+    // 以前那些路徑都會把 spinner 留著轉，看起來像卡住。
+    if (touchedBar && myToken === runToken) $('ocrStatus').innerHTML = ocrBarBefore;
+    // 辨識本身不可靠時一定要講。以前這段寫在函式尾端，而 standalone 在第一行
+    // 就 return 了——線上版（唯一 100% 靠瀏覽器 OCR 的那一版）反而永遠看不到。
+    if (myToken === runToken && lastOcrConfidence !== null
+        && lastOcrConfidence < UNSTABLE_OCR_CONF) {
       notify('noticeStep1',
         '這張圖的文字辨識不可靠（辨識信心 ' + Math.round(lastOcrConfidence) + '%，'
         + '一般清晰的廣告圖在 80% 以上）。圖上的字太小或太密，'
         + '下方「廣告文字」很可能有大量錯字。\n'
-        + '建議改用這些方式取得正確文字：\n'
-        + '一、用 Win + Shift + S 截圖後，在跳出的「剪取工具」視窗點「文字動作」複製文字。\n'
-        + '二、把原圖放大、或改截解析度較高的版本再上傳。\n'
-        + '三、直接把廣告文案貼到「廣告文字」欄位。\n'
+        + '建議：用滑鼠左鍵在預覽圖上框選要看的那一塊單獨辨識，通常準得多；'
+        + '或改用解析度較高的原圖；或直接把廣告文案貼到「廣告文字」欄位。\n'
         + '★ 陳情信會引述這段文字當作違規事證，請務必核對後再送件。',
         'warn');
     }
-  } catch (e) {
-    ocrMsg('（背景交叉比對未完成：' + e.message + '，不影響上方結果）');
   }
 }
 
