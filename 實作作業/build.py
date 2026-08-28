@@ -49,6 +49,13 @@ html, nv = re.subn(r'\{\{VERSION\}\}', lambda m: VTAG, html)
 if nv != 1:
     raise SystemExit('建置失敗：index.html 裡找不到 {{VERSION}} 佔位符 (%d)' % nv)
 
+# .hidden 是整份樣式表唯一的隱藏開關。少了 !important 就會被 ID 規則
+# （#dropOverlay）與後定義的同級規則（.ocrbar）蓋過去，元素該藏卻一直顯示。
+# 這個坑踩過兩次，所以在建置時擋住。
+if not re.search(r'\.hidden\s*\{[^}]*display\s*:\s*none\s*!important', css):
+    raise SystemExit('建置失敗：styles.css 的 .hidden 必須是 display:none!important'
+                     '　　（否則 #dropOverlay 之類的 ID 規則會蓋過它，元素藏不住）')
+
 out, n1 = re.subn(r'<link rel="stylesheet" href="styles\.css">',
                   lambda m: '<style>\n' + css.rstrip() + '\n</style>', html)
 # 從 regulations.json 注入法條表與關鍵字品類，避免前端這份副本與資料檔漂移

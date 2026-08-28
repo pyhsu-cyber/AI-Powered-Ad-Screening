@@ -118,15 +118,26 @@
   .disclaimer{font-size:.77rem;color:var(--dim);margin-top:16px;
               border-top:1px solid var(--line);padding-top:11px}
   #spinner{display:none;text-align:center;color:var(--muted);padding:16px;font-size:.87rem}
-  .hidden{display:none}
+  /* 這是整份樣式表唯一的隱藏開關，必須贏過所有 display 宣告，所以要 !important。
+     不加的話會踩到兩個坑（都真的發生過）：
+       1. ID 規則勝出 —— #dropOverlay{display:flex} 是 (1,0,0)、.hidden 是 (0,1,0)，
+          遮罩從載入起就一直蓋在畫面上，hidden class 完全沒作用。
+       2. 同特異度、後定義者勝出 —— .ocrbar{display:flex} 寫在 .hidden 後面，
+          所以 OCR 狀態列在還沒選圖片時就顯示著「—」。
+     列印不受影響：@media print 用的是 ID 特異度 + !important（#previewCard、
+     #printAttach），(1,0,0) 仍然贏過這裡的 (0,1,0)。 */
+  .hidden{display:none!important}
   /* 全頁拖曳提示層：出結果後 #drop 會被 Step 2~4 的卡片擠出畫面，
      使用者幾乎一定是把下一張圖丟在結果區，所以整個視窗都要能接。 */
-  #dropOverlay{position:fixed;inset:0;z-index:90;display:flex;align-items:center;
-    justify-content:center;background:rgba(6,20,27,.82);backdrop-filter:blur(2px);
-    pointer-events:none}
-  #dropOverlay>div{border:2.5px dashed var(--teal);border-radius:18px;padding:44px 60px;
-    text-align:center;font-size:1.15rem;color:var(--teal);background:rgba(14,39,51,.72)}
-  #dropOverlay small{display:block;margin-top:10px;font-size:.82rem;color:var(--dim)}
+  #dropOverlay{position:fixed;inset:0;z-index:90;display:flex;align-items:flex-start;
+    justify-content:center;pointer-events:none;
+    /* 只做淡色罩 + 內縮虛線框，不要把整頁蓋黑 —— 使用者要看得見自己丟在哪裡 */
+    background:rgba(6,20,27,.28);
+    box-shadow:inset 0 0 0 3px var(--teal-dk),inset 0 0 0 14px rgba(6,20,27,.28)}
+  #dropOverlay>div{margin-top:34px;border:1.5px solid var(--teal-dk);border-radius:999px;
+    padding:12px 26px;text-align:center;font-size:.95rem;color:var(--teal);
+    background:rgba(9,28,37,.94);box-shadow:0 8px 24px rgba(0,0,0,.45)}
+  #dropOverlay small{display:block;margin-top:3px;font-size:.78rem;color:var(--dim)}
   footer{text-align:center;color:var(--dim);font-size:.74rem;padding:24px}
   /* 版號要看得到 —— 使用者回報問題時說不出自己在跑哪一版，就無從重現 */
   footer .ver{display:inline-block;margin-top:6px;opacity:.75;letter-spacing:.05em}
@@ -314,7 +325,7 @@
     <div class="disclaimer">寄送方式：可透過各縣市衛生局線上陳情系統、衛福部食藥署「食品藥物業者登錄平台／陳情檢舉信箱」，或以書面郵寄。列印時會自動把廣告截圖附在信後。</div>
   </div>
 </main>
-<footer>PoC 原型 — 依《AI 導入方案：違規廣告檢舉 App v2》規格開發。檢舉人個資僅在本機瀏覽器處理，不會上傳雲端儲存。<br><span class="ver">v14</span></footer>
+<footer>PoC 原型 — 依《AI 導入方案：違規廣告檢舉 App v2》規格開發。檢舉人個資僅在本機瀏覽器處理，不會上傳雲端儲存。<br><span class="ver">v15</span></footer>
 
 <div id="dropOverlay" class="hidden"><div>放開就開始分析<small>換一張圖不用捲回上面，丟在哪裡都可以</small></div></div>
 
@@ -1149,6 +1160,21 @@ window.addEventListener('drop', e => {
   const f = e.dataTransfer && e.dataTransfer.files[0];
   if (f) loadFile(f);
 });
+/* 保險絲。上面的計數器理論上會歸零，但實務上 dragleave 不保證會發：
+   拖曳中按 Esc 取消、把檔案拖出視窗外放開、或瀏覽器自己漏發事件，都會讓
+   遮罩留在畫面上。原生拖曳進行中不會有 mouse / key 事件，所以只要收到
+   其中任何一個，就代表拖曳早就結束了 —— 直接強制收掉。 */
+function forceHideDropHint() {
+  if (dropOverlay.classList.contains('hidden')) return;
+  dragDepth = 0;
+  showDropHint(false);
+}
+window.addEventListener('dragend', forceHideDropHint);
+window.addEventListener('mousemove', forceHideDropHint);
+window.addEventListener('pointerdown', forceHideDropHint);
+window.addEventListener('keydown', forceHideDropHint);
+window.addEventListener('blur', forceHideDropHint);
+
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 document.addEventListener('paste', e => {
   const items = (e.clipboardData && e.clipboardData.items) || [];

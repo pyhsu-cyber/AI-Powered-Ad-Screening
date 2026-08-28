@@ -391,6 +391,21 @@ window.addEventListener('drop', e => {
   const f = e.dataTransfer && e.dataTransfer.files[0];
   if (f) loadFile(f);
 });
+/* 保險絲。上面的計數器理論上會歸零，但實務上 dragleave 不保證會發：
+   拖曳中按 Esc 取消、把檔案拖出視窗外放開、或瀏覽器自己漏發事件，都會讓
+   遮罩留在畫面上。原生拖曳進行中不會有 mouse / key 事件，所以只要收到
+   其中任何一個，就代表拖曳早就結束了 —— 直接強制收掉。 */
+function forceHideDropHint() {
+  if (dropOverlay.classList.contains('hidden')) return;
+  dragDepth = 0;
+  showDropHint(false);
+}
+window.addEventListener('dragend', forceHideDropHint);
+window.addEventListener('mousemove', forceHideDropHint);
+window.addEventListener('pointerdown', forceHideDropHint);
+window.addEventListener('keydown', forceHideDropHint);
+window.addEventListener('blur', forceHideDropHint);
+
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
 document.addEventListener('paste', e => {
   const items = (e.clipboardData && e.clipboardData.items) || [];
