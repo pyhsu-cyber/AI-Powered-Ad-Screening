@@ -1,3 +1,12 @@
+> # 📦 本專案已搬遷
+>
+> **線上版新網址：https://taihao-ai-games.web.app/aiad/index.html**
+>
+> 舊網址 `pyhsu-cyber.github.io/AI-Powered-Ad-Screening` 已設定自動轉址。
+>
+> 程式碼與各版變更紀錄改在內部 Gitea 維護，這個 repo 不再更新（內容停在 v20）。
+> 若你是從舊連結或搜尋結果過來的，請改用上面的新網址。
+
 # AI 違規廣告快篩與一鍵通報系統
 
 上傳一張廣告截圖，自動讀出圖上的字、比對 719 個違規用語、列出涉違反的法條與罰則，
