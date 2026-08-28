@@ -1091,24 +1091,129 @@ function summarize(vios) {
        + '本結果為關鍵字比對之初篩，請逐項人工複核後再送件。';
 }
 
+/* ============ 健康食品許可證比對 ============
+   領有衛福部健康食品許可證（健字號）者，得在核准範圍內合法標示該項保健功效
+   ——「調節血脂」「護肝」這類詞對持證產品不是違規，對沒證的產品才是。
+   在有這份快照之前，工具只能把這 13 項法定保健功效一律標成「疑似・待認定」
+   （測試資料 R7 就是為此列的已知限制）。現在可以直接比對。
+
+   兩件事刻意不做：
+     1. 不判斷「宣稱有沒有逾越核准範圍」。那要語意比對，不是字串比對做得到的。
+        面板改成把 TFDA 核准的宣稱原文原封不動列出來，讓人自己對照。
+     2. 查無字號時不寫「未經核准」。快照是每週更新的靜態檔，且廣告本來就常常
+        不印字號；措辭一律是「本快照查無此字號」並附上官方查詢連結。 */
+
+/* 健字號寫法很多：衛部健食字第A00235號、衛署健食字第A00235號、衛部健食規字第000123號，
+   OCR 還可能吃掉「衛部」或把空白插進去。抓得寬一點，比對鍵才嚴格。 */
+const HF_NO_RE = /健\s*食\s*(規)?\s*字\s*第?\s*([A-Za-z])?\s*0*(\d{1,6})\s*號?/g;
+
+function hfKey(isSpec, letter, digits) {
+  return (isSpec ? '規' : '般') + '|' + (letter || '').toUpperCase() + String(parseInt(digits, 10));
+}
+
+/* 從廣告文字裡找出健字號，回傳 {rec, raw} 或 {raw} （查無）或 null（沒寫字號）。 */
+/* 查證用的副本：把空白全部拿掉（換行保留，避免跨行把兩段數字接在一起）。
+   OCR 很常把「衛部健食字第A00237號」讀成「衛 部 健 食 字 第 A 0 0 2 3 7 號」，
+   而 tidyCJK 只處理中文之間的空白，數字之間的它不會動。 */
+function hfNormalize(s) {
+  return String(s || '').replace(/[^\S\n]+/g, '');
+}
+
+function findHealthFoodPermit(text) {
+  if (typeof HEALTH_FOOD === 'undefined' || !HEALTH_FOOD || !HEALTH_FOOD.records) return null;
+  const s = hfNormalize(text);
+  HF_NO_RE.lastIndex = 0;
+  let m;
+  while ((m = HF_NO_RE.exec(s))) {
+    const k = hfKey(m[1], m[2], m[3]);
+    const rec = HEALTH_FOOD.records.find(r => r.k === k);
+    if (rec) return { rec: rec, raw: m[0].replace(/\s+/g, '') };
+    if (!m[2] && !m[1]) continue;                  // 純數字太容易誤抓，要有字母或「規」才算
+    return { raw: m[0].replace(/\s+/g, '') };
+  }
+  return null;
+}
+
+/* 把「已取得許可、且在核准功效範圍內」的命中挑出來，不列為違規。
+   只有證況是「核可」才放行——失效／註銷／廢止／併証都不算。 */
+function splitByLicence(vios, hit) {
+  if (!hit || !hit.rec || hit.rec.st !== '核可') return { keep: vios, licensed: [] };
+  const eff = hit.rec.eff || [];
+  const keep = [], licensed = [];
+  vios.forEach(v => (eff.indexOf(v.quote) >= 0 ? licensed : keep).push(v));
+  return { keep: keep, licensed: licensed };
+}
+
+const HF_QUERY_URL = 'https://consumer.fda.gov.tw/Food/InfoHealthFood.aspx?nodeID=162';
+
+function renderHealthFoodCard(hit, licensed) {
+  const box = $('hfCard');
+  box.className = '';
+  if (!hit) { box.className = 'hidden'; return; }
+  const date = (HEALTH_FOOD && HEALTH_FOOD.date) || '';
+
+  if (!hit.rec) {
+    box.classList.add('miss');
+    box.innerHTML = '<h4>⚠ 廣告寫了健字號，但本快照查不到</h4>'
+      + '<dl><dt>廣告上的字號</dt><dd>' + esc(hit.raw) + '</dd></dl>'
+      + '<div class="src">本工具內建的是 ' + esc(date) + ' 的 TFDA 快照（565 筆）。'
+      + '查不到可能是字號有誤、OCR 讀錯、該證不在本快照涵蓋範圍，'
+      + '<b>也可能是廣告冒用不存在的字號</b>。請至 '
+      + '<a href="' + HF_QUERY_URL + '" target="_blank">食藥署健康食品查詢 ↗</a> 確認後再判斷，'
+      + '陳情信不會逕自主張「未經核准」。</div>';
+    return;
+  }
+
+  const r = hit.rec, ok = r.st === '核可';
+  box.classList.add(ok ? '' : 'bad');
+  let h = '<h4>' + (ok ? '✅ 查得健康食品許可證' : '⚠ 查得許可證，但證況為「' + esc(r.st) + '」') + '</h4>'
+    + '<dl>'
+    + '<dt>許可證字號</dt><dd>' + esc(r.no) + '</dd>'
+    + '<dt>中文品名</dt><dd>' + esc(r.name) + '</dd>'
+    + '<dt>申請商</dt><dd>' + esc(r.co) + '</dd>'
+    + '<dt>核可日期</dt><dd>' + esc(r.date || '—') + '</dd>'
+    + '<dt>證況</dt><dd>' + esc(r.st) + '</dd>'
+    + '<dt>核准保健功效</dt><dd>' + esc((r.eff || []).join('、') || '—') + '</dd>'
+    + '</dl>';
+  if (r.claim) h += '<div class="claim"><b>TFDA 核准的保健功效宣稱原文：</b>\n' + esc(r.claim) + '</div>';
+  if (r.warn)  h += '<div class="claim"><b>核准的警語：</b>\n' + esc(r.warn) + '</div>';
+
+  if (!ok) {
+    h += '<div class="src">⚠ 這張證的證況不是「核可」。以健康食品名義販售或標示保健功效，'
+       + '須為領有有效許可證者（健康食品管理法第6條），這一點請一併請主管機關查核。</div>';
+  } else if (licensed && licensed.length) {
+    h += '<div class="src">已排除 ' + licensed.length + ' 項在核准範圍內的用語（'
+       + licensed.map(v => '「' + esc(v.quote) + '」').join('、') + '）'
+       + ' —— 持證產品得於許可範圍內標示這些保健功效，列進陳情信會被承辦人員剔除。</div>';
+  }
+  h += '<div class="src">資料來源：衛福部食藥署健康食品資料集（快照 ' + esc(date) + '，政府資料開放授權條款-第1版）。'
+     + '<b>核准 ≠ 廣告全部合法</b>：宣稱逾越上列核准範圍、或涉及醫療效能，仍違反健康食品管理法第14條。'
+     + '請自行比對上面的宣稱原文與廣告實際寫法。</div>';
+  box.innerHTML = h;
+}
+
 function renderResult(d, opts) {
   opts = opts || {};
   const isDemo = !aiEnabled && d.mode !== 'gemini';
   $('rProduct').textContent = d.product_name;
   $('rType').textContent = d.product_type;
   const risk = $('rRisk');
-  const scoped = splitByScope(d.violations || [], currentType()).keep;
-  const lvl = isDemo ? calcRisk(scoped) : d.risk_level;
-  risk.textContent = lvl; risk.className = 'risk ' + lvl;
-  $('rSummary').textContent = isDemo ? summarize(scoped) : d.overall_assessment;
   const list = $('vioList');
   list.innerHTML = '';
   const pType = currentType();
   const split = splitByScope(d.violations || [], pType);
-  const shown = split.keep;
+  // 有健字號就查許可證，核准範圍內的保健功效不列為違規
+  const hit = findHealthFoodPermit(d.ad_text || $('adText').value);
+  const lic = splitByLicence(split.keep, hit);
+  const shown = lic.keep;
+  renderHealthFoodCard(hit, lic.licensed);
+  const lvl = isDemo ? calcRisk(shown) : d.risk_level;
+  risk.textContent = lvl; risk.className = 'risk ' + lvl;
+  $('rSummary').textContent = isDemo ? summarize(shown) : d.overall_assessment;
   if (!shown.length)
     list.innerHTML = '<p style="color:var(--ok)">未偵測到明顯違規字句。</p>';
   d._shown = shown;                       // 陳情信要用同一份
+  d._hf = hit;
   if (split.drop.length) {
     notify('noticeStep1', '已依產品類別「' + pType + '」排除 ' + split.drop.length + ' 項不適用的用語（'
          + split.drop.map(v => '「' + v.quote + '」').join('、') + '）。\n'
@@ -1231,7 +1336,16 @@ function buildLetter() {
   const today = new Date();
   const rocDate = d => d ? `民國 ${new Date(d).getFullYear()-1911} 年 ${new Date(d).getMonth()+1} 月 ${new Date(d).getDate()} 日` : '（未填）';
   const pType = g('fType') || analysis.product_type;
-  const usable = splitByScope(analysis.violations || [], pType).keep;
+  // 陳情信要跟 Step 2 顯示的是同一份：品類過濾之後，再扣掉健字號核准範圍內的用語。
+  // 把持證產品合法標示的保健功效寫進陳情信，等於誣指，承辦人一查就會整份剔除。
+  const hfHit = findHealthFoodPermit(analysis.ad_text || $('adText').value);
+  const licSplit = splitByLicence(splitByScope(analysis.violations || [], pType).keep, hfHit);
+  const usable = licSplit.keep;
+  if (licSplit.licensed.length) {
+    notify('noticeStep3', '已排除 ' + licSplit.licensed.length + ' 項在健康食品許可證核准範圍內的用語（'
+         + licSplit.licensed.map(v => '「' + v.quote + '」').join('、') + '）。\n'
+         + '該產品領有 ' + (hfHit.rec ? hfHit.rec.no : '') + '，得於許可範圍內標示這些保健功效。', 'ok', 12000);
+  }
   if (!usable.length) {
     notify('noticeStep3', '依產品類別「' + pType + '」過濾後沒有適用的違規項目，無法生成陳情信。\n'
          + '請確認產品類別是否選對。', 'warn');

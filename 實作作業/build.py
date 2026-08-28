@@ -64,6 +64,10 @@ reg = json.loads(io.open(os.path.join(os.path.dirname(HERE), 'regulations.json')
 laws = {l['id']: {k: l[k] for k in ('law_name', 'article', 'summary', 'penalty', 'url')}
         for l in reg['laws']}
 scope = reg.get('keyword_scope', {})
+# 健康食品許可證快照（來源見 update_healthfood.py）。內嵌而非執行期查詢：
+# TFDA 沒給 CORS 標頭，而且查外部 API 會把產品資訊送出去，破壞離線承諾。
+hf = json.loads(io.open(os.path.join(os.path.dirname(HERE), '健康食品許可證.json'),
+                        encoding='utf-8').read())
 ev = reg.get('keyword_evidence', {})
 block = ('/* @generated-from-regulations\n'
          '   本區塊由 build.py 從 ../regulations.json 自動產生，請不要手改。 */\n'
@@ -81,6 +85,10 @@ block = ('/* @generated-from-regulations\n'
          'const OUT_OF_SCOPE = ' + json.dumps(
              {k: v for k, v in reg.get('out_of_scope', {}).items()
               if not k.startswith('_')}, ensure_ascii=False, indent=2) + ';\n'
+         'const HEALTH_FOOD = ' + json.dumps(
+             {'date': hf.get('_snapshot_date', ''), 'canon': hf.get('_canonical_effects', []),
+              'records': hf.get('records', [])},
+             ensure_ascii=False, separators=(',', ':')) + ';\n'
          'const CONTEXT_EXCLUSIONS = ' + json.dumps(
              {k: v for k, v in reg.get('context_exclusions', {}).items()
               if not k.startswith('_')}, ensure_ascii=False, indent=2) + ';\n'
@@ -100,6 +108,9 @@ print('  事前核准制品類：%s'
       % '、'.join(k for k in reg.get('pre_approval', {}) if not k.startswith('_')))
 print('  法域外品類：%s'
       % '、'.join(k for k in reg.get('out_of_scope', {}) if not k.startswith('_')))
+_hf_ok = sum(1 for r in hf.get('records', []) if r.get('st') == '核可')
+print('  健康食品許可證：%d 筆（核可 %d），快照日 %s'
+      % (len(hf.get('records', [])), _hf_ok, hf.get('_snapshot_date', '?')))
 _ce = reg.get('context_exclusions', {})
 print('  語境排除：%d 條規則、%d 個關鍵字、%d 個療效動詞否決詞'
       % (len(_ce.get('rules', [])),

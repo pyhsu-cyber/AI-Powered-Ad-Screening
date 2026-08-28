@@ -87,6 +87,21 @@
   .vio .law a{color:var(--teal);text-decoration:none;border-bottom:1px dotted var(--teal-dk)}
   .vio .conf{font-size:.74rem;color:var(--dim);margin-top:7px;
              display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  /* 健康食品許可證比對面板 */
+  #hfCard{border:1px solid var(--line2);border-left:4px solid var(--teal);border-radius:10px;
+          padding:13px 15px;margin-bottom:14px;background:#0c2029;font-size:.85rem}
+  #hfCard.bad{border-left-color:var(--danger);background:#1f1214}
+  #hfCard.miss{border-left-color:var(--warn);background:#1c1810}
+  #hfCard h4{margin:0 0 8px;font-size:.92rem;color:var(--teal)}
+  #hfCard.bad h4{color:var(--danger)}
+  #hfCard.miss h4{color:var(--warn)}
+  #hfCard dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0}
+  #hfCard dt{color:var(--dim);white-space:nowrap}
+  #hfCard dd{margin:0;color:var(--text)}
+  #hfCard .claim{margin-top:9px;padding:9px 11px;border-radius:8px;background:#0d1f2a;
+                 border:1px solid var(--line);white-space:pre-wrap;line-height:1.65}
+  #hfCard .src{margin-top:8px;font-size:.74rem;color:var(--dim)}
+  #hfCard a{color:var(--teal);text-decoration:none;border-bottom:1px dotted var(--teal-dk)}
   .ev{font-size:.68rem;font-weight:700;padding:1px 8px;border-radius:20px;
       letter-spacing:.3px;white-space:nowrap;cursor:help}
   .ev-c{background:#0d2b26;color:var(--ok);border:1px solid #1f5f52}
