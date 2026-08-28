@@ -4,14 +4,18 @@
 const $ = id => document.getElementById(id);
 
 /* 頁面內訊息（取代 alert）：type = err / warn / ok */
-function notify(slot, text, type, autoHideMs) {
+/* action（選用）：{ label, onClick } —— 在訊息下方多一顆按鈕。
+   目前用在「換圖清掉了你手打的文字」時提供還原，不要讓使用者的輸入默默消失。 */
+function notify(slot, text, type, autoHideMs, action) {
   const el = $(slot);
   if (!el) return;
   if (el._t) { clearTimeout(el._t); el._t = null; }
   el.className = 'notice show ' + (type || 'err');
   el.innerHTML = '<button class="x" type="button" title="關閉">✕</button>'
-               + esc(text).replace(/\n/g, '<br>');
+               + esc(text).replace(/\n/g, '<br>')
+               + (action ? '<button class="mini act" type="button">' + esc(action.label) + '</button>' : '');
   el.querySelector('.x').onclick = () => clearNotice(slot);
+  if (action) el.querySelector('.act').onclick = () => { clearNotice(slot); action.onClick(); };
   if (autoHideMs) el._t = setTimeout(() => clearNotice(slot), autoHideMs);
 }
 function clearNotice(slot) {
@@ -413,6 +417,8 @@ document.addEventListener('paste', e => {
   if (item) { e.preventDefault(); loadFile(item.getAsFile()); }
 });
 
+initRegionPicker();
+
 const MAX_MB = 10;
 const OK_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp'];
 
@@ -444,6 +450,7 @@ function loadFile(f) {
     rawDataUrl = reader.result;
     imageB64 = rawDataUrl.split(',')[1];
     const img = $('preview');
+    $('previewWrap').classList.remove('hidden');
     img.style.display = 'block';
     img.onload = () => {
       const w = img.naturalWidth, h = img.naturalHeight;
@@ -462,7 +469,12 @@ function loadFile(f) {
     // L1：換圖時清掉上一張留下的機器文字與分析結果，只保留使用者自己打的字
     runToken++;
     const ta = $('adText');
-    if (textIsMachine) { ta.value = ''; lastOcrText = ''; textIsMachine = false; }
+    // 換圖一律清掉上一張留下的文字。以前只清機器辨識的結果、保留使用者手打的字，
+    // 結果是丟了新圖卻還拿舊文字去分析 —— 陳情信會引錄 A 圖的文字、附上 B 圖的
+    // 截圖，送出去只會被承辦人剔除。使用者回報的症狀是「要重新整理才會辨識新圖」。
+    // 手打的字不是不重要，所以清掉之後給一顆還原按鈕，而不是默默丟掉。
+    const prevTyped = (!textIsMachine && ta.value.trim()) ? ta.value : '';
+    ta.value = ''; lastOcrText = ''; textIsMachine = false;
     if (productIsMachine) { $('fProduct').value = ''; productIsMachine = false; }
     analysis = null;
     ['resultCard', 'letterCard', 'previewCard'].forEach(id => $(id).classList.add('hidden'));
@@ -484,14 +496,22 @@ function loadFile(f) {
     // 但只在「廣告文字」是空的時候自動跑。欄位有字而且不是機器填的，代表使用者
     // 自己打過或改過（L1：機器不覆蓋使用者的字），上面的清空邏輯就不會動它；
     // 這時自動分析會拿「上一張圖的文字」去配「這一張圖」，產出的陳情信是錯的。
-    if (!ta.value.trim()) {
-      runAnalysis();
-    } else {
+    // 還原提示要等分析跑完再出 —— runAnalysis() 開頭會 clearNotice('noticeStep1')，
+    // 先貼會被立刻清掉。分析途中若出錯，那則錯誤訊息比還原提示重要，不要蓋掉它。
+    const afterAnalysis = () => {
+      if (!prevTyped) return;
+      if ($('noticeStep1').classList.contains('show')) return;
       notify('noticeStep1',
-             '已載入新圖片，但沒有自動分析 —「廣告文字」是你自己編輯過的，'
-             + '系統不會覆蓋它。要改用新圖重新辨識，請先清空該欄位再按「開始快篩分析」；'
-             + '想沿用現在這段文字的話，直接按分析即可。', 'warn', 10000);
-    }
+             '已清掉上一張圖留下的文字，改用這張新圖重新辨識。'
+             + '（你剛才手動輸入或修改過的內容沒有被丟掉，需要的話按下面還原。）',
+             'ok', 20000,
+             { label: '還原剛才的文字', onClick: () => {
+                 ta.value = prevTyped; textIsMachine = false;
+                 notify('noticeStep1', '已還原剛才的文字。注意：這段文字對應的是上一張圖，'
+                      + '若要改用新圖重新辨識，把欄位清空後再按「開始快篩分析」。', 'warn', 12000);
+               } });
+    };
+    Promise.resolve(runAnalysis()).then(afterAnalysis, afterAnalysis);
   };
   reader.readAsDataURL(f);
 }
@@ -658,6 +678,16 @@ function runOCR(auto, enhance) {
 const PHANTOM_MIN_OVERLAP = 0.6;   // bbox 交集要佔較小那個框多少比例
 const PHANTOM_MIN_GAP     = 40;    // 壓制者的信心要高出多少
 const PHANTOM_MAX_CONF    = 60;    // 只有本身信心夠低的才可能被丟
+/* 兩行都讀爛時（信心相當、都很低），信心差判不出誰是幻覺。這時改看範圍：
+   幻覺是同一塊區域的「子假設」，框一定比真的那行小而且被包在裡面。
+   實測 R6：conf 0 的「可寺咆合」(3850 px²) 完全落在同樣 conf 0 的
+   「黑豆玥物飲」(11250 px²) 裡面，面積比 2.92。 */
+const PHANTOM_TIE_CONF    = 20;    // 信心差在這個範圍內才算「相當」
+const PHANTOM_AREA_RATIO  = 2;     // 對方框要大這麼多倍才判它是本尊
+
+function bboxArea(b) {
+  return Math.max(0, b.x1 - b.x0) * Math.max(0, b.y1 - b.y0);
+}
 
 function bboxOverlap(a, b) {
   const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
@@ -673,12 +703,136 @@ function textWithoutPhantomLines(data) {
   if (lines.length < 2) return (data && data.text) || '';
   const keep = lines.filter(l => {
     if (!l.bbox || l.confidence >= PHANTOM_MAX_CONF) return true;
-    return !lines.some(o => o !== l && o.bbox
-      && o.confidence - l.confidence >= PHANTOM_MIN_GAP
-      && bboxOverlap(l.bbox, o.bbox) >= PHANTOM_MIN_OVERLAP);
+    return !lines.some(o => {
+      if (o === l || !o.bbox) return false;
+      if (bboxOverlap(l.bbox, o.bbox) < PHANTOM_MIN_OVERLAP) return false;
+      if (o.confidence - l.confidence >= PHANTOM_MIN_GAP) return true;
+      // 信心分不出高下時看範圍。差距中等（20~40）就兩個都留著，寧可多一行亂碼
+      if (Math.abs(o.confidence - l.confidence) > PHANTOM_TIE_CONF) return false;
+      return bboxArea(o.bbox) >= bboxArea(l.bbox) * PHANTOM_AREA_RATIO;
+    });
   });
   if (keep.length === lines.length) return data.text || '';
   return keep.map(l => (l.text || '').replace(/\s+$/, '')).join('\n');
+}
+
+/* ============ 框選辨識 ============
+   整張圖一起讀，常常會把不相干的區塊（頁尾、浮水印、旁邊的留言）也讀進來；
+   密集的資訊圖表更是整片糊掉（R9 那張整體信心只有 44）。
+   用左鍵在預覽圖上拖出一塊，就只辨識那一塊 —— 而且裁切後可以單獨放大到
+   tesseract 對 CJK 的舒適區，準確度通常比整張讀好很多。
+   同一張圖可以重複框選，每次的結果各自成一行接在「廣告文字」後面。 */
+let selStart = null, selBusy = false;
+
+function selPointOf(e) {
+  const r = $('preview').getBoundingClientRect();
+  return { x: Math.min(Math.max(e.clientX - r.left, 0), r.width),
+           y: Math.min(Math.max(e.clientY - r.top, 0), r.height),
+           dw: r.width, dh: r.height };
+}
+function selDraw(a, b) {
+  const box = $('selBox');
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  const w = Math.abs(a.x - b.x), h = Math.abs(a.y - b.y);
+  box.style.left = x + 'px'; box.style.top = y + 'px';
+  box.style.width = w + 'px'; box.style.height = h + 'px';
+  box.classList.remove('hidden');
+  return { x: x, y: y, w: w, h: h, dw: a.dw, dh: a.dh };
+}
+
+function initRegionPicker() {
+  const wrap = $('previewWrap');
+  if (!wrap) return;
+  wrap.addEventListener('dragstart', e => e.preventDefault());   // 別觸發原生圖片拖曳
+  wrap.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !rawDataUrl || selBusy) return;         // 只收滑鼠左鍵
+    e.preventDefault();
+    selStart = selPointOf(e);
+    wrap.classList.add('picking');
+    try { wrap.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  wrap.addEventListener('pointermove', e => {
+    if (selStart) selDraw(selStart, selPointOf(e));
+  });
+  const finish = e => {
+    if (!selStart) return;
+    const start = selStart;
+    selStart = null;
+    wrap.classList.remove('picking');
+    try { wrap.releasePointerCapture(e.pointerId); } catch (_) {}
+    const r = selDraw(start, selPointOf(e));
+    $('selBox').classList.add('hidden');
+    // 太小的多半是誤觸或想點一下，不是要框選
+    if (r.w < 16 || r.h < 12) return;
+    ocrRegion(r);
+  };
+  wrap.addEventListener('pointerup', finish);
+  wrap.addEventListener('pointercancel', () => {
+    selStart = null; wrap.classList.remove('picking'); $('selBox').classList.add('hidden');
+  });
+}
+
+async function ocrRegion(r) {
+  if (selBusy) return;
+  selBusy = true;
+  const myToken = runToken;
+  try {
+    ocrMsg('辨識框選區域…', true);
+    const img = await loadImg(rawDataUrl);
+    // 顯示座標 → 原圖座標
+    const fx = img.naturalWidth / r.dw, fy = img.naturalHeight / r.dh;
+    const cx = Math.round(r.x * fx), cy = Math.round(r.y * fy);
+    const cw = Math.round(r.w * fx), ch = Math.round(r.h * fy);
+    if (cw < 4 || ch < 4) { ocrMsg('框選範圍太小，請框大一點。'); return; }
+    // 小塊放大到約 900px 寬，但受總像素上限約束（大圖放大會把分頁吃爆）
+    let scale = Math.max(1, Math.min(4, Math.round(900 / cw)));
+    scale = Math.max(1, Math.min(scale, Math.sqrt(12e6 / (cw * ch))));
+    const c = document.createElement('canvas');
+    c.width = Math.round(cw * scale); c.height = Math.round(ch * scale);
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(img, cx, cy, cw, ch, 0, 0, c.width, c.height);
+    const url = c.toDataURL('image/png');
+    c.width = c.height = 0;                       // 及早釋放，別留著上億像素的 canvas
+
+    const worker = await getTessWorker();
+    tessProgress = m => {
+      if (m.status === 'recognizing text')
+        ocrMsg('辨識框選區域… ' + Math.round((m.progress || 0) * 100) + '%', true);
+    };
+    const { data } = await worker.recognize(url);
+    tessProgress = null;
+    if (myToken !== runToken) return;             // 辨識途中換過圖，結果作廢
+    const got = tidyCJK(textWithoutPhantomLines(data));
+    if (!got) {
+      ocrMsg('這一塊沒有辨識到文字 — 框大一點，或改框字比較清楚的地方。');
+      return;
+    }
+    const added = appendAdText(got);
+    ocrMsg((added ? '✅ 框選區域辨識出 ' + charCount(got) + ' 個字，已接在「廣告文字」後面'
+                  : '這一塊的文字剛才已經加過了，沒有重複加入')
+         + '（辨識信心 ' + Math.round(data.confidence) + '）。可以繼續框下一塊，'
+         + '框完按「開始快篩分析」。');
+  } catch (e) {
+    tessProgress = null;
+    ocrMsg('框選辨識失敗：' + e.message);
+  } finally {
+    selBusy = false;
+  }
+}
+
+/* 每次框選的結果各自成一行接在後面。重複框到同一塊就不重覆加。 */
+function appendAdText(text) {
+  const ta = $('adText');
+  const cur = ta.value.replace(/[ \t\n]+$/, '');
+  const t = text.trim();
+  if (!t) return false;
+  if (cur && cur.split('\n').some(l => l.trim() === t)) return false;
+  ta.value = cur ? cur + '\n' + t : t;
+  lastOcrText = ta.value;
+  // 框選是使用者主動挑的，背景補讀不要把它蓋掉
+  textIsMachine = false;
+  return true;
 }
 
 async function doOCR(auto, enhance) {

@@ -46,6 +46,15 @@
         color:var(--muted);cursor:pointer;transition:.2s;background:#0b1e29}
   #drop:hover,#drop.over{border-color:var(--teal-dk);background:#0e2733;color:#a9c9d6}
   #drop small{display:block;margin-top:6px;color:var(--dim);font-size:.78rem}
+  /* 框選辨識：容器要定位，選取框才能疊在圖上 */
+  #previewWrap{position:relative;display:inline-block;margin-top:14px;max-width:100%;line-height:0}
+  #previewWrap img{margin-top:0;display:block}
+  #previewWrap.picking{cursor:crosshair}
+  #selBox{position:absolute;border:2px dashed var(--teal);background:rgba(45,212,191,.14);
+          pointer-events:none;border-radius:4px}
+  #selHint{position:absolute;left:0;right:0;bottom:0;line-height:1.5;
+           font-size:.74rem;color:#cfe9f0;background:rgba(6,20,27,.72);
+           padding:5px 9px;border-radius:0 0 10px 10px;text-align:center}
   #preview{max-width:100%;max-height:320px;margin-top:14px;border-radius:10px;display:none;
            border:1px solid var(--line)}
 
@@ -136,6 +145,7 @@
   .hidden{display:none!important}
   /* 全頁拖曳提示層：出結果後 #drop 會被 Step 2~4 的卡片擠出畫面，
      使用者幾乎一定是把下一張圖丟在結果區，所以整個視窗都要能接。 */
+  .notice .act{display:inline-block;margin-top:9px}
   #dropOverlay{position:fixed;inset:0;z-index:90;display:flex;align-items:flex-start;
     justify-content:center;pointer-events:none;
     /* 只做淡色罩 + 內縮虛線框，不要把整頁蓋黑 —— 使用者要看得見自己丟在哪裡 */

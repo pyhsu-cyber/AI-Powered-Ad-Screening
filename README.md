@@ -26,6 +26,9 @@
 | 功能 | 說明 |
 |---|---|
 | **雙 OCR 引擎** | Windows 內建 OCR（離線、約 1 秒）為主，瀏覽器 tesseract.js 為備援並自動背景交叉比對補漏 |
+| **框選辨識** | 用左鍵在預覽圖上拖出一塊，就只辨識那一塊並接進「廣告文字」。同一張圖可以重複框，每塊各自成一行。整張讀常會把頁尾、浮水印、旁邊留言一起讀進來，密集圖表更是整片糊掉；框選還會把小塊單獨放大到辨識引擎的舒適區 |
+| **拖曳／Ctrl+V 直接分析** | 圖片丟在頁面任何地方都會接住並自動開始分析，不必捲回上面按按鈕；分析完換下一張就是「再丟一次」這一個動作 |
+| **OCR 幻覺行濾除** | tesseract 偶爾會對同一塊區域吐出兩個競爭的行假設，其中一個是憑空的亂碼。用 bbox 重疊而非信心門檻判定，所以不會誤殺「讀得很爛但真的存在」的內容 |
 | **OCR 多趟補讀與可靠度提示** | 小字自動放大、對比拉伸第二讀、多趟結果取聯集；辨識信心過低時明講「這次辨識不可靠，請逐字核對」 |
 | **719 個違規關鍵字** | 來自食藥署認定基準、化粧品認定準則附件、衛福部公告詞句例示與各縣市衛生局實際裁處案例（詳見 [關鍵字來源](說明文件/關鍵字來源.md)） |
 | **證據等級三級** | 每個關鍵字標明依據強度：有實際裁處案例 286 / 主管機關明文例示 361 / 僅依法規推論 72。陳情信會逐詞列出依據，只是推論的標示「疑似違規，惠請貴局本於職權認定」，不會講得像已經定讞 |
@@ -74,13 +77,17 @@
 ```
 違規廣告快篩.exe        主程式（PyInstaller 單檔封裝）
 ocr.ps1                 Windows.Media.Ocr 一次性 CLI 腳本
+VERSION                 版號唯一來源 ← build.py 讀它並反查各文件是否一致
 regulations.json        法規、違規關鍵字與品類範圍 ← 唯一真相來源
+健康食品許可證.json      食藥署健康食品資料集快照（565 筆，離線比對用）
 static/index.html       操作介面（build.py 產生，勿手改）
 
 實作作業/               前端原始碼
   index.html  styles.css  app.js
-  build.py              產生 static/index.html 與 docs/index.html
-                        並從 regulations.json 注入法規資料
+  build.py              產生 static/index.html 與 docs/index.html，注入法規資料
+                        與健康食品快照，並檢查各文件版號是否與 VERSION 一致
+  package.py            打包成 版本封存/違規廣告快篩_vN.zip（含機敏檔案複驗）
+  update_healthfood.py  從 TFDA 開放資料更新健康食品快照（需連網，平常不必跑）
 
 docs/                   GitHub Pages 線上版（純瀏覽器，不需要 exe）
 
@@ -142,23 +149,31 @@ python build.py
 ## 測試
 
 ```bash
-# 後端與資料模型
-python -m pytest tests/ backend/ -v
-
-# 前端與端對端測試需要 node + puppeteer-core，且程式要在執行中
+python -m pytest backend tests -q      # 全部
+python tests/test_whitelist.py         # 也可以單獨跑任何一支，會印出逐項結果
 ```
 
-現行測試基線：
+現行測試基線（共 **367 項檢查 / 11 支測試檔**，全數通過）：
 
-| 套件 | 結果 |
-|---|---|
-| 前端單元測試 | 41 passed |
-| 主流程端對端（Chrome 實機） | 24 passed |
-| UX 驗證 | 27 passed |
-| 審查修正驗證 | 29 passed |
-| 品類過濾驗證 | 12 passed |
-| 合法文案誤判（12 組） | 0 誤判 |
-| 真實裁罰案例召回（18 則） | 18 / 18 |
+| 測試檔 | 項數 | 守什麼 |
+|---|---:|---|
+| `backend/test_smoke.py` | 7 | schema / validators / fixtures 能正確載入 |
+| `backend/test_app_smoke.py` | 20 | Flask 路由與 analyzer 冒煙測試 |
+| `backend/test_security.py` | 25 | 速率限制、安全標頭、個資遮蔽 |
+| `backend/test_api_spec.py` | 10 | 請求／回應符合 JSON Schema |
+| `tests/test_unit.py` | 79 | 驗證器與資料模型 |
+| `tests/test_e2e.py` | 64 | 主流程與回應結構 |
+| `tests/test_uat.py` | 37 | 驗收情境（含邊界輸入） |
+| `tests/test_whitelist.py` | 38 | **法規明文允許的宣稱不得被判違規**、語境排除、資料庫自身一致性 |
+| `tests/test_healthfood.py` | 31 | 健康食品許可證快照、核准範圍排除 |
+| `tests/test_ocr_filter.py` | 25 | OCR 幻覺行濾除，且不誤殺低信心的真實內容 |
+| `tests/test_region_pick.py` | 31 | 框選辨識的接續與去重、換圖清空文字 |
+
+其中 `test_healthfood.py`、`test_ocr_filter.py` 與 `test_region_pick.py` 會用 node 直接跑**出貨產物
+`static/index.html` 裡的那份程式碼**（不是另寫一份等價實作）；機器上沒有 node
+就只跑資料層檢查並印 INFO，不會變成硬相依。
+
+真實裁罰案例召回：18 / 18（`測試資料/真實案例/`）。
 
 `測試資料/真實案例/` 的違規測試圖，文案取自主管機關實際裁處案件的廣告原文
 （關捷挺固立罰 1,124 萬、FORTE 面膜罰 529 萬等）。

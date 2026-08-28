@@ -28,7 +28,11 @@
       <div class="fmt">支援 JPG / PNG / WebP / GIF / BMP　·　單張上限 10 MB　·　建議短邊 600px 以上辨識較準　·　圖片丟在頁面任何地方都可以</div>
     </div>
     <input type="file" id="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" class="hidden">
-    <img id="preview" alt="預覽">
+    <div id="previewWrap" class="hidden">
+      <img id="preview" alt="預覽" draggable="false">
+      <div id="selBox" class="hidden"></div>
+      <div id="selHint">在圖上按住拖曳，可只辨識框選的那一塊</div>
+    </div>
     <div class="ocrbar hidden" id="ocrBar">
       <span id="ocrStatus">—</span>
       <button class="mini" id="ocrBtn" title="用不同的影像處理再讀一次，補回第一次漏掉的字">換一種讀法再補一次</button>
