@@ -639,6 +639,48 @@ function runOCR(auto, enhance) {
   return ocrPromise;
 }
 
+/* tesseract 偶爾會對同一塊區域吐出兩個互相競爭的行假設：一個正確、一個完全
+   憑空，而 data.text 會把兩個都印出來。實測「合法2_食品_穀物飲」在標題那一帶
+   就多出一行 conf=0 的「3繼下台夫愧全」，跟 conf=91 的「台灣黑豆穀物飲」
+   bbox 100% 重疊；「R1_關捷挺固立」也有一行 conf=0 的「Le朵」壓在 conf=95 的
+   「關節保健膠囊」上。
+
+   只用信心值當門檻會出事 —— 實測有一批真實內容的信心也很低：
+   「SPF50+PA++++」只有 7、「延年益壽、青春永凡」只有 18、「苦瓜勝采複方膠囊」
+   只有 12。那些砍掉就會漏抓違規，比多一行亂碼嚴重得多。
+
+   真正的判別訊號是「重疊」：幻覺行必定壓在另一個信心高很多的行上面，
+   而低信心的真實行都是獨立存在的。用 bbox 交集而不是只看 y 範圍，
+   否則雙欄排版會把其中一欄誤殺。
+
+   實測 15 張測試圖共 88 行，這條規則剛好只丟掉那 2 行幻覺，其餘一行未動；
+   交集門檻 0.4~0.7、信心差 30~60 的每一組參數結果都相同，邊界很寬。 */
+const PHANTOM_MIN_OVERLAP = 0.6;   // bbox 交集要佔較小那個框多少比例
+const PHANTOM_MIN_GAP     = 40;    // 壓制者的信心要高出多少
+const PHANTOM_MAX_CONF    = 60;    // 只有本身信心夠低的才可能被丟
+
+function bboxOverlap(a, b) {
+  const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+  const h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+  if (w <= 0 || h <= 0) return 0;
+  const smaller = Math.min((a.x1 - a.x0) * (a.y1 - a.y0), (b.x1 - b.x0) * (b.y1 - b.y0));
+  return smaller > 0 ? (w * h) / smaller : 0;
+}
+
+/* 回傳去掉幻覺行之後的文字。拿不到逐行資料時原樣回傳，不要因此少讀到東西。 */
+function textWithoutPhantomLines(data) {
+  const lines = (data && data.lines) || [];
+  if (lines.length < 2) return (data && data.text) || '';
+  const keep = lines.filter(l => {
+    if (!l.bbox || l.confidence >= PHANTOM_MAX_CONF) return true;
+    return !lines.some(o => o !== l && o.bbox
+      && o.confidence - l.confidence >= PHANTOM_MIN_GAP
+      && bboxOverlap(l.bbox, o.bbox) >= PHANTOM_MIN_OVERLAP);
+  });
+  if (keep.length === lines.length) return data.text || '';
+  return keep.map(l => (l.text || '').replace(/\s+$/, '')).join('\n');
+}
+
 async function doOCR(auto, enhance) {
   const myToken = runToken;
   const ta = $('adText');
@@ -657,7 +699,7 @@ async function doOCR(auto, enhance) {
     const worker = await getTessWorker();
     const pass1 = await worker.recognize(first);
     lastOcrConfidence = pass1.data.confidence;   // 引擎自評的辨識信心（0~100）
-    let text = tidyCJK(pass1.data.text);
+    let text = tidyCJK(textWithoutPhantomLines(pass1.data));
 
     // 依實際量到的字高決定要不要放大。真實廣告截圖的字往往只有 10~15px，
     // tesseract 對 CJK 的舒適區約 34px，差距大就整數倍放大重讀一次。
@@ -665,7 +707,8 @@ async function doOCR(auto, enhance) {
     const scale = lh > 0 ? Math.min(3, Math.max(1, Math.round(34 / lh))) : 1;
     if (scale > 1) {
       ocrMsg('圖上的字偏小（約 ' + lh + 'px），放大 ' + scale + ' 倍重新辨識…', true);
-      const t2 = tidyCJK((await worker.recognize(prepare(img, scale, enhance))).data.text);
+      const t2 = tidyCJK(textWithoutPhantomLines(
+        (await worker.recognize(prepare(img, scale, enhance))).data));
       // 放大版通常較準；只有在明顯讀更少時才退回原尺寸的結果
       if (charCount(t2) >= charCount(text) * 0.5) text = t2;
     }
